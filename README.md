@@ -6,7 +6,8 @@
 - [`SlackForwardingLayer`], which sends an HTTP POST request (via [`tokio`] and [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
 
 ## Installation
-For the bleeding edge, pull directly from master:
+
+Configure the dependencies and pull directly from GitHub:
 
 ```toml
 [dependencies]
