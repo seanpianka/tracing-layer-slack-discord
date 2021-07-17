@@ -3,7 +3,7 @@
 `tracing-layer-slack` provides a [`Layer`] implementation based on top of a [`tracing`] [`Subscriber`] and [`tracing-bunyan-formatter`]'s [`JsonStorageLayer`]:
 - [`JsonStorageLayer`], to attach contextual information to spans for ease of consumption by
   downstream [`Layer`]s, via [`JsonStorage`] and [`Span`]'s [`extensions`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html);
-- [`SlackForwardingLayer`]`, which sends an HTTP POST request (via [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
+- [`SlackForwardingLayer`], which sends an HTTP POST request (via [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
 
 ## Installation
 For the bleeding edge, pull directly from master:
