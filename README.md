@@ -68,3 +68,4 @@ async fn main() {
 [`tracing`]: https://docs.rs/tracing
 [`tracing`]: https://docs.rs/tracing-subscriber
 [`reqwest`]: https://docs.rs/reqwest/0.11.4/reqwest/
+[`tokio`]: https://docs.rs/tokio/1.8.1/tokio/
