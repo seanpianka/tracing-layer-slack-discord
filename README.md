@@ -3,13 +3,14 @@
 `tracing-layer-slack` provides a [`Layer`] implementation based on top of a [`tracing`] [`Subscriber`] and [`tracing-bunyan-formatter`]'s [`JsonStorageLayer`]:
 - [`JsonStorageLayer`], to attach contextual information to spans for ease of consumption by
   downstream [`Layer`]s, via [`JsonStorage`] and [`Span`]'s [`extensions`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html);
-- [`SlackForwardingLayer`], which sends an HTTP POST request (via [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
+- [`SlackForwardingLayer`], which sends an HTTP POST request (via [`tokio`] and [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
 
 ## Installation
 For the bleeding edge, pull directly from master:
 
 ```toml
 [dependencies]
+tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 tracing-futures = "0.2"
 tracing-bunyan-formatter = { version = "0.2", default-features = false }
@@ -27,7 +28,7 @@ use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 
 #[instrument]
-pub fn a_unit_of_work(first_parameter: u64) {
+pub async fn a_unit_of_work(first_parameter: u64) {
     for i in 0..2 {
         a_sub_unit_of_work(i);
     }
@@ -39,7 +40,8 @@ pub fn a_sub_unit_of_work(sub_parameter: u64) {
     info!("Events have the full context of their parent span!");
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let slack_layer = SlackForwardingLayer::new(
         "https://slack.com/webhook_url".into(), 
         "project_traces".into(), 
@@ -52,7 +54,7 @@ fn main() {
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
     info!("Orphan event without a parent span");
-    a_unit_of_work(2);
+    a_unit_of_work(2).await;
 }
 ```
 
