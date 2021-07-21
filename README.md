@@ -43,12 +43,7 @@ pub fn a_sub_unit_of_work(sub_parameter: u64) {
 
 #[tokio::main]
 async fn main() {
-    let slack_layer = SlackForwardingLayer::new(
-        "https://slack.com/webhook_url".into(), 
-        "project_traces".into(), 
-        "Tracing Bot".into(), 
-        Some(":robot:".into()),
-    );
+    let slack_layer = SlackForwardingLayer::new_from_env();
     let subscriber = Registry::default()
         .with(JsonStorageLayer)
         .with(slack_layer);
