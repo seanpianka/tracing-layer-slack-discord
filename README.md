@@ -21,36 +21,41 @@ tracing-layer-slack = { git = "https://github.com/seanpianka/tracing-layer-slack
 ## Getting Started
 
 ```rust
-use tracing_slack_layer::SlackForwardingLayer;
-use tracing_bunyan_formatter::JsonStorageLayer;
-use tracing::instrument;
 use tracing::info;
-use tracing_subscriber::Registry;
+use tracing::instrument;
+use tracing_bunyan_formatter::JsonStorageLayer;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Registry;
+use tracing_layer_slack::{SlackForwardingLayer, SlackConfig, WorkerMessage};
 
 #[instrument]
-pub async fn a_unit_of_work(first_parameter: u64) {
-    for i in 0..2 {
-        a_sub_unit_of_work(i);
-    }
-    info!(excited = "true", "Tracing is quite cool!");
+pub async fn a_unit_of_work(_first_parameter: u64) {
+  for i in 0..2 {
+    a_sub_unit_of_work(i);
+  }
+  info!(excited = "true", "Tracing is quite cool!");
 }
 
 #[instrument]
-pub fn a_sub_unit_of_work(sub_parameter: u64) {
-    info!("Events have the full context of their parent span!");
+pub fn a_sub_unit_of_work(_sub_parameter: u64) {
+  info!("Events have the full context of their parent span!");
+}
+
+pub async fn handler() {
+  info!("Orphan event without a parent span");
+  a_unit_of_work(2).await;
 }
 
 #[tokio::main]
 async fn main() {
-    let slack_layer = SlackForwardingLayer::new_from_env();
-    let subscriber = Registry::default()
-        .with(JsonStorageLayer)
-        .with(slack_layer);
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-
-    info!("Orphan event without a parent span");
-    a_unit_of_work(2).await;
+  let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+  let worker_handle = tokio::spawn(tracing_layer_slack::worker(rx));
+  let slack_layer = SlackForwardingLayer::new("simple".into(), SlackConfig::default(), tx.clone());
+  let subscriber = Registry::default().with(JsonStorageLayer).with(slack_layer);
+  tracing::subscriber::set_global_default(subscriber).unwrap();
+  handler().await;
+  tx.send(WorkerMessage::Shutdown);
+  worker_handle.await;
 }
 ```
 

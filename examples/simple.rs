@@ -3,8 +3,7 @@ use tracing::instrument;
 use tracing_bunyan_formatter::JsonStorageLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Registry;
-
-use tracing_layer_slack::{SlackForwardingLayer, SlackConfig};
+use tracing_layer_slack::{SlackForwardingLayer, SlackConfig, WorkerMessage};
 
 #[instrument]
 pub async fn a_unit_of_work(_first_parameter: u64) {
@@ -28,8 +27,10 @@ pub async fn handler() {
 async fn main() {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let worker_handle = tokio::spawn(tracing_layer_slack::worker(rx));
-    let slack_layer = SlackForwardingLayer::new("simple".into(), SlackConfig::default(), tx);
+    let slack_layer = SlackForwardingLayer::new("simple".into(), SlackConfig::default(), tx.clone());
     let subscriber = Registry::default().with(JsonStorageLayer).with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    tokio::join!(worker_handle, handler());
+    handler().await;
+    tx.send(WorkerMessage::Shutdown).unwrap();
+    worker_handle.await.unwrap();
 }
