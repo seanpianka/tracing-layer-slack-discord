@@ -20,7 +20,13 @@ pub struct SlackPayload {
 }
 
 impl SlackPayload {
-    pub(crate) fn new(channel: String, username: String, text: String, webhook_url: String, icon_emoji: Option<String>) -> Self {
+    pub(crate) fn new(
+        channel: String,
+        username: String,
+        text: String,
+        webhook_url: String,
+        icon_emoji: Option<String>,
+    ) -> Self {
         Self {
             channel,
             username,

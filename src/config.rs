@@ -6,7 +6,6 @@ pub struct SlackConfig {
     pub(crate) webhook_url: String,
 }
 
-
 impl SlackConfig {
     const DEFAULT_EMOJI: &'static str = "robot";
 
@@ -26,7 +25,9 @@ impl Default for SlackConfig {
             std::env::var("SLACK_WEBHOOK_URL").expect("slack webhook url in env"),
             std::env::var("SLACK_CHANNEL_NAME").expect("slack channel name in env"),
             std::env::var("SLACK_USERNAME").expect("slack username in env"),
-            std::env::var("SLACK_EMOJI").ok().or_else(|| Some(String::from(Self::DEFAULT_EMOJI))),
+            std::env::var("SLACK_EMOJI")
+                .ok()
+                .or_else(|| Some(String::from(Self::DEFAULT_EMOJI))),
         )
     }
 }

@@ -21,12 +21,10 @@ tracing-layer-slack = { git = "https://github.com/seanpianka/tracing-layer-slack
 ## Getting Started
 
 ```rust
-use tracing::info;
-use tracing::instrument;
+use tracing::{info, instrument};
 use tracing_bunyan_formatter::JsonStorageLayer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::Registry;
-use tracing_layer_slack::{SlackForwardingLayer, SlackConfig, WorkerMessage};
+use tracing_subscriber::{layer::SubscriberExt, Registry};
+use tracing_layer_slack::{SlackConfig, SlackForwardingLayer, WorkerMessage};
 
 #[instrument]
 pub async fn a_unit_of_work(_first_parameter: u64) {
@@ -48,13 +46,14 @@ pub async fn handler() {
 
 #[tokio::main]
 async fn main() {
-  let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-  let worker_handle = tokio::spawn(tracing_layer_slack::worker(rx));
+  let (tx, worker_handle) = tracing_layer_slack::initialize_worker().await;
   let slack_layer = SlackForwardingLayer::new("simple".into(), SlackConfig::default(), tx.clone());
   let subscriber = Registry::default().with(JsonStorageLayer).with(slack_layer);
   tracing::subscriber::set_global_default(subscriber).unwrap();
+
   handler().await;
-  tx.send(WorkerMessage::Shutdown);
+
+  tx.send(WorkerMessage::Shutdown).unwrap();
   worker_handle.await;
 }
 ```
