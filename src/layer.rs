@@ -11,7 +11,7 @@ use regex::Regex;
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackForwardingLayer {
-    target_regex_filter: Regex,
+    target_regex_filter: Option<Regex>,
     config: SlackConfig,
     msg_tx: ChannelSender,
 }
@@ -20,7 +20,7 @@ impl SlackForwardingLayer {
     /// Create a new layer for forwarding messages to Slack, using a specified
     /// configuration.
     pub fn new(
-        target_regex_filter: Regex,
+        target_regex_filter: Option<Regex>,
         config: SlackConfig,
     ) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -98,9 +98,13 @@ where
             // They should be nested under `src` (see https://github.com/trentm/node-bunyan#src )
             // but `tracing` does not support nested values yet
             let target = event.metadata().target();
-            if !self.target_regex_filter.is_match(target) {
-                return Err(std::io::Error::from_raw_os_error(1));
+
+            if let Some(filter) = &self.target_regex_filter {
+                if !self.target_regex_filter.is_match(target) {
+                    return Err(std::io::Error::from_raw_os_error(1));
+                }
             }
+
             map_serializer.serialize_entry("target", event.metadata().target())?;
             map_serializer.serialize_entry("line", &event.metadata().line())?;
             map_serializer.serialize_entry("file", &event.metadata().file())?;
