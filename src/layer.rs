@@ -8,6 +8,7 @@ use tracing_subscriber::{layer::Context, registry::SpanRef, Layer};
 use crate::matches::{EventFilters, Matcher};
 use crate::worker::{WorkerMessage, SlackBackgroundWorker};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
+use std::collections::HashMap;
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackLayer {
@@ -236,8 +237,9 @@ impl<S> Layer<S> for SlackLayer
 
         let result: Result<Vec<u8>, crate::matches::MatchingError> = format();
         if let Ok(formatted) = result {
-            let text = String::from_utf8(formatted).unwrap();
-            println!("{}", text.as_str());
+            let data: HashMap<String, Value> = serde_json::from_slice(formatted.as_slice()).unwrap();
+            let text = serde_json::to_string_pretty(&data).unwrap();// String::from_utf8(formatted).unwrap();
+            dbg!("{}", text.as_str());
             let payload = SlackPayload::new(
                 self.config.channel_name.clone(),
                 self.config.username.clone(),
