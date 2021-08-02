@@ -1,4 +1,6 @@
 # tracing-layer-slack
+[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
+[![Crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg?maxAge=2592000)](https://crates.io/crates/tracing-layer-slack)
 
 `tracing-layer-slack` provides a [`Layer`] implementation based on top of a [`tracing`] [`Subscriber`] and [`tracing-bunyan-formatter`]'s [`JsonStorageLayer`]:
 - [`JsonStorageLayer`], to attach contextual information to spans for ease of consumption by
