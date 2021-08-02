@@ -2,6 +2,13 @@
 name = "tracing-layer-slack"
 version = "0.1.0"
 edition = "2018"
+license = "Apache-2.0"
+description = "Send filtered tracing events to Slack"
+documentation = "https://docs.rs/tracing-layer-slack"
+repository = "https://github.com/seanpianka/tracing-layer-slack/"
+readme = "README.md"
+keywords = ["tracing", "layer", "slack", "async", "filter"]
+categories = ["development-tools::debugging", "asynchronous"]
 
 [lib]
 name = "tracing_layer_slack"
