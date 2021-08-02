@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use regex::Regex;
 use serde::ser::{SerializeMap, Serializer};
 use serde_json::Value;
@@ -8,7 +6,7 @@ use tracing_bunyan_formatter::{JsonStorage, Type};
 use tracing_subscriber::{layer::Context, registry::SpanRef, Layer};
 
 use crate::matches::{EventFilters, Matcher};
-use crate::worker::WorkerMessage;
+use crate::worker::{WorkerMessage, SlackBackgroundWorker};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 
 /// Layer for forwarding tracing events to Slack.
@@ -45,10 +43,6 @@ pub struct SlackLayer {
 
     /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
     /// worker's receive-send loop.
-    ///
-    /// `tracing-layer-slack` synchronously generates payloads to send to the Slack API using the
-    /// tracing events from the global subscriber. However, all network requests are offloaded onto
-    /// an unbuffered channel and processed by a provided future acting as an asynchronous worker.
     shutdown_sender: ChannelSender,
 }
 
@@ -65,7 +59,7 @@ impl SlackLayer {
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
         config: SlackConfig,
-    ) -> (SlackLayer, impl Future<Output = ()>, ChannelSender) {
+    ) -> (SlackLayer, SlackBackgroundWorker) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let layer = SlackLayer {
             target_filters,
@@ -75,14 +69,27 @@ impl SlackLayer {
             config,
             shutdown_sender: tx.clone(),
         };
-        (layer, worker(rx), tx)
+        let worker = SlackBackgroundWorker {
+            worker_future: Some(Box::pin(worker(rx))),
+            sender: tx,
+            handle: None
+        };
+        (layer, worker)
     }
 
+    /// Create a new builder for SlackLayer.
     pub fn builder(target_filters: EventFilters) -> SlackLayerBuilder {
         SlackLayerBuilder::new(target_filters)
     }
 }
 
+/// A builder for creating a Slack layer.
+///
+/// The layer requires a regex for selecting events to be sent to Slack by their target. Specifying
+/// no filter (e.g. ".*") will cause an explosion in the number of messages observed by the layer.
+///
+/// Several methods expose initialization of optional filtering mechanisms, along with Slack
+/// configuration that defaults to searching in the local environment variables.
 pub struct SlackLayerBuilder {
     target_filters: EventFilters,
     message_filters: Option<EventFilters>,
@@ -102,27 +109,43 @@ impl SlackLayerBuilder {
         }
     }
 
+    /// Filter events by their message.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude an event if the message MATCHES a given regex, and
+    /// - Negative: Exclude an event if the message does NOT MATCH a given regex.
     pub fn message_filters(mut self, filters: EventFilters) -> Self {
         self.message_filters = Some(filters);
         self
     }
 
+    /// Filter events by fields.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude the event if its key MATCHES a given regex.
+    /// - Negative: Exclude the event if its key does NOT MATCH a given regex.
     pub fn event_by_field_filters(mut self, filters: EventFilters) -> Self {
         self.event_by_field_filters = Some(filters);
         self
     }
 
+    /// Filter fields of events from being sent to Slack.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
     pub fn field_exclusion_filters(mut self, filters: Vec<Regex>) -> Self {
         self.field_exclusion_filters = Some(filters);
         self
     }
 
+    /// Configure the layer's connection to the Slack Webhook API.
     pub fn slack_config(mut self, config: SlackConfig) -> Self {
         self.config = Some(config);
         self
     }
 
-    pub fn build(self) -> (SlackLayer, impl Future<Output = ()>, ChannelSender) {
+    /// Create a SlackLayer and its corresponding background worker to (async) send the messages.
+    pub fn build(self) -> (SlackLayer, SlackBackgroundWorker) {
         SlackLayer::new(
             self.target_filters,
             self.message_filters,

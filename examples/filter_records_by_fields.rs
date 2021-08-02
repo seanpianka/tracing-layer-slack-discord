@@ -2,7 +2,7 @@ use regex::Regex;
 use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-use tracing_layer_slack::{EventFilters, SlackLayer, WorkerMessage};
+use tracing_layer_slack::{EventFilters, SlackLayer};
 
 #[instrument]
 pub async fn create_user(id: u64, password: String) {
@@ -18,13 +18,12 @@ pub async fn handler() {
 async fn main() {
     let targets_to_filter: EventFilters = Regex::new("filter_records_by_fields").unwrap().into();
     let event_fields_to_filter: EventFilters = Regex::new("password").unwrap().into();
-    let (slack_layer, background_worker, channel_sender) = SlackLayer::builder(targets_to_filter)
+    let (slack_layer, mut background_worker) = SlackLayer::builder(targets_to_filter)
         .event_by_field_filters(event_fields_to_filter)
         .build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    let handle = tokio::spawn(background_worker);
+    background_worker.startup().await;
     handler().await;
-    channel_sender.send(WorkerMessage::Shutdown).unwrap();
-    handle.await.unwrap();
+    background_worker.teardown().await;
 }

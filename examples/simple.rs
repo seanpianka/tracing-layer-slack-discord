@@ -4,19 +4,19 @@ use regex::Regex;
 use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-use tracing_layer_slack::{EventFilters, SlackLayer, WorkerMessage};
+use tracing_layer_slack::{EventFilters, SlackLayer};
 
 #[instrument]
 pub async fn create_user(id: u64) {
     for i in 0..2 {
         network_io(i).await;
     }
-    info!(param = id, "user created");
+    info!(param = id, "A user was created");
 }
 
 #[instrument]
 pub async fn network_io(id: u64) {
-    info!(id, "did a network i/o thing");
+    info!(id, "We did our network I/O thing");
 }
 
 pub async fn controller() {
@@ -30,12 +30,14 @@ pub async fn controller() {
 
 #[tokio::main]
 async fn main() {
+    // Only show events from where this example code is the target.
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
-    let (slack_layer, background_worker, channel_sender) = SlackLayer::builder(target_to_filter).build();
+
+    let (slack_layer, mut background_worker) = SlackLayer::builder(target_to_filter).build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    let handle = tokio::spawn(background_worker);
+
+    background_worker.startup().await;
     controller().await;
-    channel_sender.send(WorkerMessage::Shutdown).unwrap();
-    handle.await.unwrap();
+    background_worker.teardown().await;
 }
