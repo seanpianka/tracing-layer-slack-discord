@@ -8,8 +8,8 @@ use regex::Regex;
 
 /// EventFilters describes two optional lists of regular expressions used to filter events.
 ///
-/// If provided, each expression is used in either negatively (exclusion) or positively (inclusion)
-/// matching fields of events. A match denotes logging the message to the configured Slack channel.
+/// If provided, each expression is used in either negatively ("does NOT MATCH") or
+/// positively ("does MATCH") filter against a specified value.
 pub struct EventFilters {
     /// An optional list of one-or-more regular expressions to use for determining record inclusion.
     positive: Option<Vec<Regex>>,
@@ -24,19 +24,17 @@ impl EventFilters {
     }
 }
 
+/// Interpret and convert a single regex as a single positive filter and no negative filter.
+impl From<Regex> for EventFilters {
+    fn from(positive: Regex) -> Self {
+        Self::new(Some(vec![positive]), None)
+    }
+}
+
 /// Interpret and convert a pair of regex as a single positive filter and a single negative filter.
 impl From<(Option<Regex>, Option<Regex>)> for EventFilters {
     fn from((single_positive, single_negative): (Option<Regex>, Option<Regex>)) -> Self {
-        Self::new(
-            match single_positive {
-                None => None,
-                Some(sp) => Some(vec![sp]),
-            },
-            match single_negative {
-                None => None,
-                Some(sn) => Some(vec![sn]),
-            },
-        )
+        Self::new(single_positive.map(|sp| vec![sp]), single_negative.map(|sn| vec![sn]))
     }
 }
 
@@ -55,10 +53,8 @@ impl From<(Vec<Regex>, Vec<Regex>)> for EventFilters {
 }
 
 pub(crate) enum MatchingError {
-    TargetPositiveMatchFailed,
-    TargetNegativeMatchFailed,
-    MessagePositiveMatchFailed,
-    MessageNegativeMatchFailed,
+    PositiveMatchFailed,
+    NegativeMatchFailed,
     IoError(std::io::Error),
     SerdeError(serde_json::Error),
 }
@@ -79,32 +75,53 @@ pub(crate) trait Matcher {
     fn process(&self, value: &str) -> Result<(), MatchingError>;
 }
 
+impl Matcher for EventFilters {
+    fn process(&self, value: &str) -> Result<(), MatchingError> {
+        if let Some(negative) = &self.negative {
+            for filter in negative {
+                if filter.is_match(value) {
+                    return Err(MatchingError::NegativeMatchFailed);
+                }
+            }
+        }
+        if let Some(positive) = &self.positive {
+            for filter in positive {
+                if !filter.is_match(value) {
+                    return Err(MatchingError::PositiveMatchFailed);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Matcher for Option<EventFilters> {
     fn process(&self, value: &str) -> Result<(), MatchingError> {
-        if let Some(matches) = self {
-            matches.process(value)
+        if let Some(matcher) = self {
+            matcher.process(value)
         } else {
             Ok(())
         }
     }
 }
 
-impl Matcher for EventFilters {
+impl Matcher for Vec<Regex> {
     fn process(&self, value: &str) -> Result<(), MatchingError> {
-        if let Some(positive) = &self.positive {
-            for filter in positive {
-                if !filter.is_match(value) {
-                    return Err(MatchingError::TargetPositiveMatchFailed);
-                }
-            }
-        }
-        if let Some(negative) = &self.negative {
-            for filter in negative {
-                if filter.is_match(value) {
-                    return Err(MatchingError::TargetNegativeMatchFailed);
-                }
+        for filter in self {
+            if filter.is_match(value) {
+                return Err(MatchingError::NegativeMatchFailed);
             }
         }
         Ok(())
+    }
+}
+
+impl Matcher for Option<Vec<Regex>> {
+    fn process(&self, value: &str) -> Result<(), MatchingError> {
+        if let Some(matcher) = self {
+            matcher.process(value)
+        } else {
+            Ok(())
+        }
     }
 }

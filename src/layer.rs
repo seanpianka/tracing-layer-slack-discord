@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use regex::Regex;
 use serde::ser::{SerializeMap, Serializer};
 use serde_json::Value;
 use tracing::{Event, Subscriber};
@@ -11,68 +12,124 @@ use crate::worker::WorkerMessage;
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 
 /// Layer for forwarding tracing events to Slack.
-pub struct SlackForwardingLayer {
-    /// Include/exclude event records based on filters against the event's target.
-    target_regex_filters: Option<EventFilters>,
+pub struct SlackLayer {
+    /// Filter events by their target.
+    ///
+    /// Filter type semantics:
+    /// - Subtractive: Exclude an event if the target does NOT MATCH a given regex.
+    /// - Additive: Exclude an event if the target MATCHES a given regex.
+    target_filters: EventFilters,
 
-    /// Include/exclude event records based on filters against the event's message.
-    message_regex_filters: Option<EventFilters>,
+    /// Filter events by their message.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude an event if the message MATCHES a given regex, and
+    /// - Negative: Exclude an event if the message does NOT MATCH a given regex.
+    message_filters: Option<EventFilters>,
 
-    /// Include/exclude event records based on whether an event contains a certain field.
-    event_field_filters: Option<EventFilters>,
+    /// Filter events by fields.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude the event if its key MATCHES a given regex.
+    /// - Negative: Exclude the event if its key does NOT MATCH a given regex.
+    event_by_field_filters: Option<EventFilters>,
+
+    /// Filter fields of events from being sent to Slack.
+    ///
+    /// Filter type semantics:
+    /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
+    field_exclusion_filters: Option<Vec<Regex>>,
 
     /// Configure the layer's connection to the Slack Webhook API.
     config: SlackConfig,
 
+    /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
+    /// worker's receive-send loop.
+    ///
     /// `tracing-layer-slack` synchronously generates payloads to send to the Slack API using the
     /// tracing events from the global subscriber. However, all network requests are offloaded onto
     /// an unbuffered channel and processed by a provided future acting as an asynchronous worker.
-    ///
-    /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
-    /// the message receive loop
     shutdown_sender: ChannelSender,
 }
 
-impl SlackForwardingLayer {
+impl SlackLayer {
     /// Create a new layer for forwarding messages to Slack, using a specified
     /// configuration.
     ///
     /// Returns the tracing_subscriber::Layer impl to add to a registry, an unbounded-mpsc sender
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
     /// to initialize the worker's processing and sending of HTTP requests to the Slack API.
-    pub fn new(
-        target_regex_filters: Option<EventFilters>,
-        message_regex_filters: Option<EventFilters>,
-        event_field_filters: Option<EventFilters>,
+    pub(crate) fn new(
+        target_filters: EventFilters,
+        message_filters: Option<EventFilters>,
+        event_by_field_filters: Option<EventFilters>,
+        field_exclusion_filters: Option<Vec<Regex>>,
         config: SlackConfig,
-    ) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
+    ) -> (SlackLayer, impl Future<Output = ()>, ChannelSender) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let layer = SlackForwardingLayer {
-            target_regex_filters,
-            message_regex_filters,
-            event_field_filters,
+        let layer = SlackLayer {
+            target_filters,
+            message_filters,
+            field_exclusion_filters,
+            event_by_field_filters,
             config,
             shutdown_sender: tx.clone(),
         };
-        (layer, tx, worker(rx))
+        (layer, worker(rx), tx)
     }
 
-    /// Create a new layer for forwarding messages to Slack, using configuration
-    /// available in the environment.
-    ///
-    /// Required env vars:
-    ///   * SLACK_WEBHOOK_URL
-    ///   * SLACK_CHANNEL_NAME
-    ///   * SLACK_USERNAME
-    ///
-    /// Optional env vars:
-    ///   * SLACK_EMOJI
-    pub fn new_from_env(
-        target_filters: Option<EventFilters>,
-        message_filters: Option<EventFilters>,
-        event_filters: Option<EventFilters>,
-    ) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
-        Self::new(target_filters, message_filters, event_filters, SlackConfig::default())
+    pub fn builder(target_filters: EventFilters) -> SlackLayerBuilder {
+        SlackLayerBuilder::new(target_filters)
+    }
+}
+
+pub struct SlackLayerBuilder {
+    target_filters: EventFilters,
+    message_filters: Option<EventFilters>,
+    event_by_field_filters: Option<EventFilters>,
+    field_exclusion_filters: Option<Vec<Regex>>,
+    config: Option<SlackConfig>,
+}
+
+impl SlackLayerBuilder {
+    pub(crate) fn new(target_filters: EventFilters) -> Self {
+        Self {
+            target_filters,
+            message_filters: None,
+            event_by_field_filters: None,
+            field_exclusion_filters: None,
+            config: None,
+        }
+    }
+
+    pub fn message_filters(mut self, filters: EventFilters) -> Self {
+        self.message_filters = Some(filters);
+        self
+    }
+
+    pub fn event_by_field_filters(mut self, filters: EventFilters) -> Self {
+        self.event_by_field_filters = Some(filters);
+        self
+    }
+
+    pub fn field_exclusion_filters(mut self, filters: Vec<Regex>) -> Self {
+        self.field_exclusion_filters = Some(filters);
+        self
+    }
+
+    pub fn slack_config(mut self, config: SlackConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    pub fn build(self) -> (SlackLayer, impl Future<Output = ()>, ChannelSender) {
+        SlackLayer::new(
+            self.target_filters,
+            self.message_filters,
+            self.event_by_field_filters,
+            self.field_exclusion_filters,
+            self.config.unwrap_or_else(SlackConfig::new_from_env),
+        )
     }
 }
 
@@ -87,8 +144,8 @@ where
     format!("[{} - {}]", span.metadata().name().to_uppercase(), ty)
 }
 
-impl<S> Layer<S> for SlackForwardingLayer
-where
+impl<S> Layer<S> for SlackLayer
+    where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
@@ -112,7 +169,7 @@ where
                 .flatten()
                 .unwrap_or_else(|| event.metadata().target())
                 .to_owned();
-            self.message_regex_filters.process(message.as_str())?;
+            self.message_filters.process(message.as_str())?;
             // If the event is in the context of a span, prepend the span name to the
             // message.
             if let Some(span) = &current_span {
@@ -124,7 +181,7 @@ where
             // They should be nested under `src` (see https://github.com/trentm/node-bunyan#src )
             // but `tracing` does not support nested values yet
             let target = event.metadata().target();
-            self.target_regex_filters.process(target)?;
+            self.target_filters.process(target)?;
             map_serializer.serialize_entry("target", event.metadata().target())?;
 
             map_serializer.serialize_entry("line", &event.metadata().line())?;
@@ -135,8 +192,9 @@ where
                 .values()
                 .iter()
                 .filter(|(&key, _)| key != "message")
-                .filter(|(&key, _)| self.event_field_filters.process(key).is_ok())
+                .filter(|(&key, _)| self.field_exclusion_filters.process(key).is_ok())
             {
+                self.event_by_field_filters.process(key)?;
                 map_serializer.serialize_entry(key, value)?;
             }
 
@@ -155,7 +213,7 @@ where
 
         let result: Result<Vec<u8>, crate::matches::MatchingError> = format();
         if let Ok(formatted) = result {
-            let text = String::from_utf8(formatted.clone()).unwrap();
+            let text = String::from_utf8(formatted).unwrap();
             println!("{}", text.as_str());
             let payload = SlackPayload::new(
                 self.config.channel_name.clone(),

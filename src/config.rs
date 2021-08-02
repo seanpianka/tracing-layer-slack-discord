@@ -17,10 +17,18 @@ impl SlackConfig {
             webhook_url,
         }
     }
-}
 
-impl Default for SlackConfig {
-    fn default() -> Self {
+    /// Create a new config for forwarding messages to Slack using configuration
+    /// available in the environment.
+    ///
+    /// Required env vars:
+    ///   * SLACK_WEBHOOK_URL
+    ///   * SLACK_CHANNEL_NAME
+    ///   * SLACK_USERNAME
+    ///
+    /// Optional env vars:
+    ///   * SLACK_EMOJI
+    pub fn new_from_env() -> Self {
         Self::new(
             std::env::var("SLACK_WEBHOOK_URL").expect("slack webhook url in env"),
             std::env::var("SLACK_CHANNEL_NAME").expect("slack channel name in env"),
@@ -29,5 +37,11 @@ impl Default for SlackConfig {
                 .ok()
                 .or_else(|| Some(String::from(Self::DEFAULT_EMOJI))),
         )
+    }
+}
+
+impl Default for SlackConfig {
+    fn default() -> Self {
+        Self::new_from_env()
     }
 }
