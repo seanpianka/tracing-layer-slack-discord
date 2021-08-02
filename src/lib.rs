@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 pub use config::SlackConfig;
 pub use layer::SlackLayer;
 pub use layer::SlackLayerBuilder;
