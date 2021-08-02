@@ -48,7 +48,7 @@ impl SlackBackgroundWorker {
     /// Spawn the worker onto a running tokio runtime and begin sending tracing events to Slack.
     ///
     /// Without invoking `.startup()`, tracing events will not be sent.
-    pub async fn startup(&mut self) {
+    pub fn startup(&mut self) {
         self.handle = Some(tokio::spawn(self.worker_future.take().unwrap()))
     }
 

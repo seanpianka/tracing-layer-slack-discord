@@ -18,43 +18,58 @@ tracing-bunyan-formatter = { version = "0.2", default-features = false }
 tracing-layer-slack = { git = "https://github.com/seanpianka/tracing-layer-slack", branch = "master" }
 ```
 
-## Getting Started
+## Examples 
+
+### Simple
 
 ```rust
+use std::time::Duration;
+
+use regex::Regex;
 use tracing::{info, instrument};
-use tracing_bunyan_formatter::JsonStorageLayer;
 use tracing_subscriber::{layer::SubscriberExt, Registry};
-use tracing_layer_slack::{SlackConfig, SlackForwardingLayer, WorkerMessage};
+
+use tracing_layer_slack::{EventFilters, SlackLayer};
 
 #[instrument]
-pub async fn a_unit_of_work(_first_parameter: u64) {
-  for i in 0..2 {
-    a_sub_unit_of_work(i);
-  }
-  info!(excited = "true", "Tracing is quite cool!");
+pub async fn create_user(id: u64) {
+    for i in 0..2 {
+        network_io(i).await;
+    }
+    info!(param = id, "A user was created");
 }
 
 #[instrument]
-pub fn a_sub_unit_of_work(_sub_parameter: u64) {
-  info!("Events have the full context of their parent span!");
+pub async fn network_io(id: u64) {
+    info!(id, "We did our network I/O thing");
 }
 
-pub async fn handler() {
-  info!("Orphan event without a parent span");
-  a_unit_of_work(2).await;
+pub async fn controller() {
+    info!("Orphan event without a parent span");
+    create_user(2).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    create_user(4).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    create_user(6).await;
 }
 
 #[tokio::main]
 async fn main() {
-  let (tx, worker_handle) = tracing_layer_slack::initialize_worker().await;
-  let slack_layer = SlackForwardingLayer::new("simple".into(), SlackConfig::default(), tx.clone());
-  let subscriber = Registry::default().with(JsonStorageLayer).with(slack_layer);
-  tracing::subscriber::set_global_default(subscriber).unwrap();
+    // Only show events from where this example code is the target.
+    let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
-  handler().await;
+    // Initialize the layer and an async background task for sending our Slack messages.
+    let (slack_layer, mut background_worker) = SlackLayer::builder(target_to_filter).build();
+    // Initialize the global default subscriber for tracing events.
+    let subscriber = Registry::default().with(slack_layer);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 
-  tx.send(WorkerMessage::Shutdown).unwrap();
-  worker_handle.await;
+    // Spawn a worker future on the tokio runtime to send our Slack messages.
+    background_worker.startup();
+    // Perform our application code that needs tracing and Slack messages.
+    controller().await;
+    // Waits for all Slack messages to be sent before exiting.
+    background_worker.teardown().await;
 }
 ```
 

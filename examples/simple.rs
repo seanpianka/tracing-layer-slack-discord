@@ -37,7 +37,7 @@ async fn main() {
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    background_worker.startup().await;
+    background_worker.startup();
     controller().await;
     background_worker.teardown().await;
 }
