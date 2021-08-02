@@ -1,10 +1,13 @@
 pub use config::SlackConfig;
 pub use layer::SlackForwardingLayer;
-pub use message::WorkerMessage;
-pub use types::ChannelSender;
+pub use worker::WorkerMessage;
+pub use matches::EventFilters;
 
 mod config;
 mod layer;
 mod message;
-mod types;
 mod worker;
+mod matches;
+
+pub type ChannelSender = tokio::sync::mpsc::UnboundedSender<WorkerMessage>;
+pub(crate) type ChannelReceiver = tokio::sync::mpsc::UnboundedReceiver<WorkerMessage>;

@@ -1,10 +1,11 @@
 use std::time::Duration;
 
+use regex::Regex;
 use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-use tracing_layer_slack::{SlackConfig, SlackForwardingLayer, WorkerMessage};
-use regex::Regex;
+use tracing_layer_slack::{EventFilters, WorkerMessage};
+use tracing_layer_slack::{SlackConfig, SlackForwardingLayer};
 
 #[instrument]
 pub async fn create_user(id: u64) {
@@ -30,7 +31,9 @@ pub async fn handler() {
 
 #[tokio::main]
 async fn main() {
-    let (slack_layer, channel_sender, background_worker) = SlackForwardingLayer::new(Regex::new("simple").unwrap(), SlackConfig::default());
+    let target_to_filter: EventFilters = (Some(Regex::new("simple").unwrap().into()), None).into();
+    let (slack_layer, channel_sender, background_worker) =
+        SlackForwardingLayer::new(Some(target_to_filter), None, None, SlackConfig::default());
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
     let handle = tokio::spawn(background_worker);

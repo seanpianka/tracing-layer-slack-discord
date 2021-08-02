@@ -6,28 +6,53 @@ use tracing::{Event, Subscriber};
 use tracing_bunyan_formatter::{JsonStorage, Type};
 use tracing_subscriber::{layer::Context, registry::SpanRef, Layer};
 
-use crate::{config::SlackConfig, message::SlackPayload, types::ChannelSender, worker::worker, WorkerMessage};
-use regex::Regex;
+use crate::matches::{EventFilters, Matcher};
+use crate::worker::WorkerMessage;
+use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackForwardingLayer {
-    target_regex_filter: Option<Regex>,
+    /// Include/exclude event records based on filters against the event's target.
+    target_regex_filters: Option<EventFilters>,
+
+    /// Include/exclude event records based on filters against the event's message.
+    message_regex_filters: Option<EventFilters>,
+
+    /// Include/exclude event records based on whether an event contains a certain field.
+    event_field_filters: Option<EventFilters>,
+
+    /// Configure the layer's connection to the Slack Webhook API.
     config: SlackConfig,
-    msg_tx: ChannelSender,
+
+    /// `tracing-layer-slack` synchronously generates payloads to send to the Slack API using the
+    /// tracing events from the global subscriber. However, all network requests are offloaded onto
+    /// an unbuffered channel and processed by a provided future acting as an asynchronous worker.
+    ///
+    /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
+    /// the message receive loop
+    shutdown_sender: ChannelSender,
 }
 
 impl SlackForwardingLayer {
     /// Create a new layer for forwarding messages to Slack, using a specified
     /// configuration.
+    ///
+    /// Returns the tracing_subscriber::Layer impl to add to a registry, an unbounded-mpsc sender
+    /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
+    /// to initialize the worker's processing and sending of HTTP requests to the Slack API.
     pub fn new(
-        target_regex_filter: Option<Regex>,
+        target_regex_filters: Option<EventFilters>,
+        message_regex_filters: Option<EventFilters>,
+        event_field_filters: Option<EventFilters>,
         config: SlackConfig,
     ) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let layer = SlackForwardingLayer {
-            target_regex_filter,
+            target_regex_filters,
+            message_regex_filters,
+            event_field_filters,
             config,
-            msg_tx: tx.clone(),
+            shutdown_sender: tx.clone(),
         };
         (layer, tx, worker(rx))
     }
@@ -42,8 +67,12 @@ impl SlackForwardingLayer {
     ///
     /// Optional env vars:
     ///   * SLACK_EMOJI
-    pub fn new_from_env(target_filter: Regex) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
-        Self::new(target_filter, SlackConfig::default())
+    pub fn new_from_env(
+        target_filters: Option<EventFilters>,
+        message_filters: Option<EventFilters>,
+        event_filters: Option<EventFilters>,
+    ) -> (SlackForwardingLayer, ChannelSender, impl Future<Output = ()>) {
+        Self::new(target_filters, message_filters, event_filters, SlackConfig::default())
     }
 }
 
@@ -64,13 +93,11 @@ where
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let current_span = ctx.lookup_current();
-
         let mut event_visitor = JsonStorage::default();
         event.record(&mut event_visitor);
 
         let format = || {
             let mut buffer = Vec::new();
-
             let mut serializer = serde_json::Serializer::new(&mut buffer);
             let mut map_serializer = serializer.serialize_map(None)?;
 
@@ -85,33 +112,31 @@ where
                 .flatten()
                 .unwrap_or_else(|| event.metadata().target())
                 .to_owned();
-
+            self.message_regex_filters.process(message.as_str())?;
             // If the event is in the context of a span, prepend the span name to the
             // message.
             if let Some(span) = &current_span {
                 message = format!("{} {}", format_span_context(span, Type::Event), message);
             }
-
-            map_serializer.serialize_entry("msg", &message)?;
+            map_serializer.serialize_entry("message", &message)?;
 
             // Additional metadata useful for debugging
             // They should be nested under `src` (see https://github.com/trentm/node-bunyan#src )
             // but `tracing` does not support nested values yet
             let target = event.metadata().target();
-
-            if let Some(filter) = &self.target_regex_filter {
-                if !self.target_regex_filter.is_match(target) {
-                    return Err(std::io::Error::from_raw_os_error(1));
-                }
-            }
-
+            self.target_regex_filters.process(target)?;
             map_serializer.serialize_entry("target", event.metadata().target())?;
+
             map_serializer.serialize_entry("line", &event.metadata().line())?;
             map_serializer.serialize_entry("file", &event.metadata().file())?;
-
             // Add all the other fields associated with the event, expect the message we
             // already used.
-            for (key, value) in event_visitor.values().iter().filter(|(&key, _)| key != "message") {
+            for (key, value) in event_visitor
+                .values()
+                .iter()
+                .filter(|(&key, _)| key != "message")
+                .filter(|(&key, _)| self.event_field_filters.process(key).is_ok())
+            {
                 map_serializer.serialize_entry(key, value)?;
             }
 
@@ -128,7 +153,7 @@ where
             Ok(buffer)
         };
 
-        let result: std::io::Result<Vec<u8>> = format();
+        let result: Result<Vec<u8>, crate::matches::MatchingError> = format();
         if let Ok(formatted) = result {
             let text = String::from_utf8(formatted.clone()).unwrap();
             println!("{}", text.as_str());
@@ -139,7 +164,7 @@ where
                 self.config.webhook_url.clone(),
                 self.config.icon_emoji.clone(),
             );
-            if let Err(e) = self.msg_tx.send(WorkerMessage::Data(payload)) {
+            if let Err(e) = self.shutdown_sender.send(WorkerMessage::Data(payload)) {
                 tracing::error!(err = %e, "failed to send slack payload to given channel")
             };
         }

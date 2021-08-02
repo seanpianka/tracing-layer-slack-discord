@@ -1,11 +1,5 @@
 use serde::Serialize;
 
-#[derive(Debug)]
-pub enum WorkerMessage {
-    Data(SlackPayload),
-    Shutdown,
-}
-
 /// The message sent to Slack. The logged record being "drained" will be
 /// converted into this format.
 #[derive(Debug, Clone, Serialize)]
