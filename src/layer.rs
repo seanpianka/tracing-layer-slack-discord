@@ -49,7 +49,8 @@ pub struct SlackLayer {
 
 impl SlackLayer {
     /// Create a new layer for forwarding messages to Slack, using a specified
-    /// configuration.
+    /// configuration. This method spawns a task onto the tokio runtime to begin sending tracing
+    /// events to Slack.
     ///
     /// Returns the tracing_subscriber::Layer impl to add to a registry, an unbounded-mpsc sender
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
@@ -71,9 +72,8 @@ impl SlackLayer {
             shutdown_sender: tx.clone(),
         };
         let worker = SlackBackgroundWorker {
-            worker_future: Some(Box::pin(worker(rx))),
             sender: tx,
-            handle: None
+            handle: tokio::spawn(worker(rx))
         };
         (layer, worker)
     }
