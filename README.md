@@ -61,17 +61,15 @@ async fn main() {
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
     // Initialize the layer and an async background task for sending our Slack messages.
-    let (slack_layer, mut background_worker) = SlackLayer::builder(target_to_filter).build();
+    let (slack_layer, background_worker) = SlackLayer::builder(target_to_filter).build();
     // Initialize the global default subscriber for tracing events.
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    // Spawn a worker future on the tokio runtime to send our Slack messages.
-    background_worker.startup();
     // Perform our application code that needs tracing and Slack messages.
     controller().await;
     // Waits for all Slack messages to be sent before exiting.
-    background_worker.teardown().await;
+    background_worker.shutdown().await;
 }
 ```
 
