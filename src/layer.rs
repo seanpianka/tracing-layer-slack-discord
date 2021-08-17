@@ -2,12 +2,13 @@ use regex::Regex;
 use serde::ser::{SerializeMap, Serializer};
 use serde_json::Value;
 use tracing::{Event, Subscriber};
-use tracing_bunyan_formatter::{JsonStorage, Type};
-use tracing_subscriber::{layer::Context, registry::SpanRef, Layer};
+use tracing_bunyan_formatter::JsonStorage;
+use tracing_subscriber::{layer::Context, Layer};
 
 use crate::filters::{EventFilters, Filter};
 use crate::worker::{WorkerMessage, SlackBackgroundWorker};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
+use std::collections::HashMap;
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackLayer {
@@ -156,17 +157,6 @@ impl SlackLayerBuilder {
     }
 }
 
-/// Ensure consistent formatting of the span context.
-///
-/// Example: "[AN_INTERESTING_SPAN - START]" is how it'd look
-
-fn format_span_context<S>(span: &SpanRef<S>, ty: Type) -> String
-where
-    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
-{
-    format!("[{} - {}]", span.metadata().name().to_uppercase(), ty)
-}
-
 impl<S> Layer<S> for SlackLayer
     where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
@@ -231,9 +221,14 @@ impl<S> Layer<S> for SlackLayer
 
             let span = match &current_span {
                 Some(span) => {
-                    format!("{} {}", format_span_context(span, Type::Event), message)
+                    span.metadata().name()
                 }
                 None => "None".into()
+            };
+
+            let metadata = {
+                let data: HashMap<String, Value> = serde_json::from_slice(metadata_buffer.as_slice()).unwrap();
+                serde_json::to_string_pretty(&data).unwrap()
             };
 
             let message = format!(
@@ -251,7 +246,7 @@ impl<S> Layer<S> for SlackLayer
                 span,
                 target,
                 event.metadata().file().unwrap_or("Unknown"), event.metadata().line().unwrap_or(0),
-                String::from_utf8_lossy(metadata_buffer.as_slice())
+                metadata
             );
 
             Ok(message)
