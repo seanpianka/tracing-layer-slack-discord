@@ -5,10 +5,9 @@ use tracing::{Event, Subscriber};
 use tracing_bunyan_formatter::{JsonStorage, Type};
 use tracing_subscriber::{layer::Context, registry::SpanRef, Layer};
 
-use crate::matches::{EventFilters, Matcher};
+use crate::filters::{EventFilters, Filter};
 use crate::worker::{WorkerMessage, SlackBackgroundWorker};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
-use std::collections::HashMap;
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackLayer {
@@ -178,12 +177,13 @@ impl<S> Layer<S> for SlackLayer
         event.record(&mut event_visitor);
 
         let format = || {
-            let mut buffer = Vec::new();
-            let mut serializer = serde_json::Serializer::new(&mut buffer);
-            let mut map_serializer = serializer.serialize_map(None)?;
+            const KEYWORDS: [&str; 2] = ["message", "error"];
+
+            let target = event.metadata().target();
+            self.target_filters.process(target)?;
 
             // Extract the "message" field, if provided. Fallback to the target, if missing.
-            let mut message = event_visitor
+            let message = event_visitor
                 .values()
                 .get("message")
                 .map(|v| match v {
@@ -191,37 +191,33 @@ impl<S> Layer<S> for SlackLayer
                     _ => None,
                 })
                 .flatten()
-                .unwrap_or_else(|| event.metadata().target())
-                .to_owned();
-            self.message_filters.process(message.as_str())?;
-            // If the event is in the context of a span, prepend the span name to the
-            // message.
-            if let Some(span) = &current_span {
-                message = format!("{} {}", format_span_context(span, Type::Event), message);
-            }
-            map_serializer.serialize_entry("message", &message)?;
+                .or_else(|| {
+                    event_visitor
+                        .values()
+                        .get("error")
+                        .map(|v| match v {
+                            Value::String(s) => Some(s.as_str()),
+                            _ => None,
+                        })
+                        .flatten()
+                })
+                .unwrap_or_else(|| "No message");
+            self.message_filters.process(message)?;
 
-            // Additional metadata useful for debugging
-            // They should be nested under `src` (see https://github.com/trentm/node-bunyan#src )
-            // but `tracing` does not support nested values yet
-            let target = event.metadata().target();
-            self.target_filters.process(target)?;
-            map_serializer.serialize_entry("target", event.metadata().target())?;
-
-            map_serializer.serialize_entry("line", &event.metadata().line())?;
-            map_serializer.serialize_entry("file", &event.metadata().file())?;
+            let mut metadata_buffer = Vec::new();
+            let mut serializer = serde_json::Serializer::new(&mut metadata_buffer);
+            let mut map_serializer = serializer.serialize_map(None)?;
             // Add all the other fields associated with the event, expect the message we
             // already used.
             for (key, value) in event_visitor
                 .values()
                 .iter()
-                .filter(|(&key, _)| key != "message")
+                .filter(|(&key, _)| !KEYWORDS.contains(&key))
                 .filter(|(&key, _)| self.field_exclusion_filters.process(key).is_ok())
             {
                 self.event_by_field_filters.process(key)?;
                 map_serializer.serialize_entry(key, value)?;
             }
-
             // Add all the fields from the current span, if we have one.
             if let Some(span) = &current_span {
                 let extensions = span.extensions();
@@ -232,18 +228,41 @@ impl<S> Layer<S> for SlackLayer
                 }
             }
             map_serializer.end()?;
-            Ok(buffer)
+
+            let span = match &current_span {
+                Some(span) => {
+                    format!("{} {}", format_span_context(span, Type::Event), message)
+                }
+                None => "None".into()
+            };
+
+            let message = format!(
+                concat!(
+                    "*Event [{}]*: \"{}\"\n",
+                    "*Span*: _{}_\n",
+                    "*Target*: _{}_\n",
+                    "*Source*: _{}#L{}_\n",
+                    "*Metadata*:\n",
+                    "```",
+                    "{}",
+                    "```",
+                ),
+                event.metadata().level().to_string(), message,
+                span,
+                target,
+                event.metadata().file().unwrap_or("Unknown"), event.metadata().line().unwrap_or(0),
+                String::from_utf8_lossy(metadata_buffer.as_slice())
+            );
+
+            Ok(message)
         };
 
-        let result: Result<Vec<u8>, crate::matches::MatchingError> = format();
+        let result: Result<String, crate::filters::FilterError> = format();
         if let Ok(formatted) = result {
-            let data: HashMap<String, Value> = serde_json::from_slice(formatted.as_slice()).unwrap();
-            let text = serde_json::to_string_pretty(&data).unwrap();// String::from_utf8(formatted).unwrap();
-            dbg!("{}", text.as_str());
             let payload = SlackPayload::new(
                 self.config.channel_name.clone(),
                 self.config.username.clone(),
-                text,
+                formatted,
                 self.config.webhook_url.clone(),
                 self.config.icon_emoji.clone(),
             );

@@ -3,7 +3,7 @@ use serde::Serialize;
 /// The message sent to Slack. The logged record being "drained" will be
 /// converted into this format.
 #[derive(Debug, Clone, Serialize)]
-pub struct SlackPayload {
+pub(crate) struct SlackPayload {
     channel: String,
     username: String,
     text: String,

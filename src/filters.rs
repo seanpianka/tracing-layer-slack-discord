@@ -52,42 +52,42 @@ impl From<(Vec<Regex>, Vec<Regex>)> for EventFilters {
     }
 }
 
-pub(crate) enum MatchingError {
-    PositiveMatchFailed,
+pub(crate) enum FilterError {
+    PositiveFilterFailed,
     NegativeMatchFailed,
     IoError(std::io::Error),
     SerdeError(serde_json::Error),
 }
 
-impl From<std::io::Error> for MatchingError {
+impl From<std::io::Error> for FilterError {
     fn from(e: Error) -> Self {
-        MatchingError::IoError(e)
+        FilterError::IoError(e)
     }
 }
 
-impl From<serde_json::Error> for MatchingError {
+impl From<serde_json::Error> for FilterError {
     fn from(e: serde_json::Error) -> Self {
-        MatchingError::SerdeError(e)
+        FilterError::SerdeError(e)
     }
 }
 
-pub(crate) trait Matcher {
-    fn process(&self, value: &str) -> Result<(), MatchingError>;
+pub(crate) trait Filter {
+    fn process(&self, value: &str) -> Result<(), FilterError>;
 }
 
-impl Matcher for EventFilters {
-    fn process(&self, value: &str) -> Result<(), MatchingError> {
+impl Filter for EventFilters {
+    fn process(&self, value: &str) -> Result<(), FilterError> {
         if let Some(negative) = &self.negative {
             for filter in negative {
                 if filter.is_match(value) {
-                    return Err(MatchingError::NegativeMatchFailed);
+                    return Err(FilterError::NegativeMatchFailed);
                 }
             }
         }
         if let Some(positive) = &self.positive {
             for filter in positive {
                 if !filter.is_match(value) {
-                    return Err(MatchingError::PositiveMatchFailed);
+                    return Err(FilterError::PositiveFilterFailed);
                 }
             }
         }
@@ -95,29 +95,29 @@ impl Matcher for EventFilters {
     }
 }
 
-impl Matcher for Option<EventFilters> {
-    fn process(&self, value: &str) -> Result<(), MatchingError> {
-        if let Some(matcher) = self {
-            matcher.process(value)
+impl Filter for Option<EventFilters> {
+    fn process(&self, value: &str) -> Result<(), FilterError> {
+        if let Some(filter) = self {
+            filter.process(value)
         } else {
             Ok(())
         }
     }
 }
 
-impl Matcher for Vec<Regex> {
-    fn process(&self, value: &str) -> Result<(), MatchingError> {
+impl Filter for Vec<Regex> {
+    fn process(&self, value: &str) -> Result<(), FilterError> {
         for filter in self {
             if filter.is_match(value) {
-                return Err(MatchingError::NegativeMatchFailed);
+                return Err(FilterError::NegativeMatchFailed);
             }
         }
         Ok(())
     }
 }
 
-impl Matcher for Option<Vec<Regex>> {
-    fn process(&self, value: &str) -> Result<(), MatchingError> {
+impl Filter for Option<Vec<Regex>> {
+    fn process(&self, value: &str) -> Result<(), FilterError> {
         if let Some(matcher) = self {
             matcher.process(value)
         } else {

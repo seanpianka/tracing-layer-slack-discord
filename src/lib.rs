@@ -3,13 +3,13 @@ pub use config::SlackConfig;
 pub use layer::SlackLayer;
 pub use layer::SlackLayerBuilder;
 pub use worker::SlackBackgroundWorker;
-pub use matches::EventFilters;
+pub use filters::EventFilters;
 
 use crate::worker::WorkerMessage;
 
 mod config;
 mod layer;
-mod matches;
+mod filters;
 mod message;
 mod worker;
 
