@@ -2,10 +2,13 @@
 [![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
 [![Crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg?maxAge=2592000)](https://crates.io/crates/tracing-layer-slack)
 
-`tracing-layer-slack` provides a [`Layer`] implementation based on top of a [`tracing`] [`Subscriber`] and [`tracing-bunyan-formatter`]'s [`JsonStorageLayer`]:
-- [`JsonStorageLayer`], to attach contextual information to spans for ease of consumption by
-  downstream [`Layer`]s, via [`JsonStorage`] and [`Span`]'s [`extensions`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html);
-- [`SlackForwardingLayer`], which sends an HTTP POST request (via [`tokio`] and [`reqwest`]) to a user-defined Slack webhook URL upon event creation. 
+`tracing-layer-slack` provides a [`Layer`] implementation for sending [`tracing`] events to Slack. 
+
+## Synopsis
+
+[`SlackLayer`] sends POST requests via [`tokio`] and [`reqwest`] to a [Slack Webhook URL](https://api.slack.com/messaging/webhooks) for each new tracing event. The format of the `text` field is statically defined.
+
+This layer also looks for an optional [`JsonStorageLayer`] [`extension`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html) on the parent [`span`] of each event. This extension may contain additional contextual information for the parent span of an event, which is included into the Slack message. 
 
 ## Installation
 
@@ -13,46 +16,43 @@ Configure the dependencies and pull directly from GitHub:
 
 ```toml
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
+tokio = "1.0"
 tracing = "0.1"
 tracing-futures = "0.2"
-tracing-bunyan-formatter = { version = "0.2", default-features = false }
-tracing-layer-slack = { git = "https://github.com/seanpianka/tracing-layer-slack", branch = "master" }
+tracing-layer-slack = "0.3"
 ```
 
 ## Examples 
 
-### Simple
+### 
+
+#### Slack Messages
+
+<img src="https://i.imgur.com/vefquEK.png" width="350" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
+
+#### Code example
 
 ```rust
-use std::time::Duration;
-
 use regex::Regex;
-use tracing::{info, instrument};
+use tracing::{info, warn, instrument};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 use tracing_layer_slack::{EventFilters, SlackLayer};
 
 #[instrument]
 pub async fn create_user(id: u64) {
-    for i in 0..2 {
-        network_io(i).await;
-    }
+    network_io(id).await;
     info!(param = id, "A user was created");
 }
 
 #[instrument]
 pub async fn network_io(id: u64) {
-    info!(id, "We did our network I/O thing");
+    warn!(user_id = id, "had to retry the request once");
 }
 
 pub async fn controller() {
     info!("Orphan event without a parent span");
-    create_user(2).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    create_user(4).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-    create_user(6).await;
+    tokio::join!(create_user(2), create_user(4), create_user(6));
 }
 
 #[tokio::main]
@@ -74,13 +74,11 @@ async fn main() {
 ```
 
 [`Layer`]: https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/layer/trait.Layer.html
-[`SlackForwardingLayer`]: https://docs.rs/tracing-layer-slack/0.1.0/tracing_layer_slack/struct.SlackForwardingLayer.html
-[`JsonStorageLayer`]: https://docs.rs/tracing-bunyan-formatter/0.1.6/tracing_bunyan_formatter/struct.JsonStorageLayer.html
-[`JsonStorage`]: https://docs.rs/tracing-bunyan-formatter/0.1.6/tracing_bunyan_formatter/struct.JsonStorage.html
-[`tracing-bunyan-formatter`]: https://docs.rs/tracing-bunyan-formatter/0.2.4/tracing_bunyan_formatter/index.html
+[`SlackLayer`]: https://docs.rs/tracing-layer-slack/0.2.2/tracing_layer_slack/struct.SlackLayer.html
 [`Span`]: https://docs.rs/tracing/0.1.13/tracing/struct.Span.html
 [`Subscriber`]: https://docs.rs/tracing-core/0.1.10/tracing_core/subscriber/trait.Subscriber.html
 [`tracing`]: https://docs.rs/tracing
 [`tracing`]: https://docs.rs/tracing-subscriber
 [`reqwest`]: https://docs.rs/reqwest/0.11.4/reqwest/
 [`tokio`]: https://docs.rs/tokio/1.8.1/tokio/
+[`JsonStorageLayer`]: https://docs.rs/tracing-bunyan-formatter/0.1.6/tracing_bunyan_formatter/struct.JsonStorageLayer.html
