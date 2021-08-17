@@ -24,14 +24,30 @@ tracing-layer-slack = "0.3"
 
 ## Examples 
 
-### 
+See the full list of examples in [examples/](./examples).
+
+### Simple
+
+In this simple example, a layer is created using Slack configuration in the environment. An orphaned event (one with no parent span) and an event occurring within a span are created in three separate futures, and a number of messages are sent quickly to Slack.
 
 #### Slack Messages
+
+This screenshots shows the first three Slack messages sent while running this example. More messages are sent but were truncated from this image.
 
 <img src="https://i.imgur.com/vefquEK.png" width="350" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
 
 #### Code example
 
+Run this example locally using the following commands:
+```shell
+$ git clone https://github.com/seanpianka/tracing-layer-slack.git
+$ cd tracing-layer-slack
+$ cargo run --example simple
+```
+
+You must have Slack configuration exported in the environment.
+
+##### Source
 ```rust
 use regex::Regex;
 use tracing::{info, warn, instrument};
