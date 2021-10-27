@@ -19,7 +19,7 @@ Configure the dependencies and pull directly from GitHub:
 tokio = "1.0"
 tracing = "0.1"
 tracing-futures = "0.2"
-tracing-layer-slack = "0.3"
+tracing-layer-slack = "0.4"
 ```
 
 ## Examples 
