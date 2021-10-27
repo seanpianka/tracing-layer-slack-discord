@@ -56,19 +56,20 @@ use tracing_subscriber::{layer::SubscriberExt, Registry};
 use tracing_layer_slack::{EventFilters, SlackLayer};
 
 #[instrument]
-pub async fn create_user(id: u64) {
+pub async fn create_user(id: u64) -> u64 {
     network_io(id).await;
     info!(param = id, "A user was created");
+    id
 }
 
 #[instrument]
 pub async fn network_io(id: u64) {
-    warn!(user_id = id, "had to retry the request once");
+    warn!(user_id = id, "some network io happened");
 }
 
 pub async fn controller() {
     info!("Orphan event without a parent span");
-    tokio::join!(create_user(2), create_user(4), create_user(6));
+    let (id1, id2, id3) = tokio::join!(create_user(2), create_user(4), create_user(6));
 }
 
 #[tokio::main]
@@ -89,7 +90,7 @@ async fn main() {
 }
 ```
 
-[`Layer`]: https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/layer/trait.Layer.html
+[`Layer`]: https://docs.rs/tracing-subscriber/0.3.0/tracing_subscriber/layer/trait.Layer.html
 [`SlackLayer`]: https://docs.rs/tracing-layer-slack/0.2.2/tracing_layer_slack/struct.SlackLayer.html
 [`Span`]: https://docs.rs/tracing/0.1.13/tracing/struct.Span.html
 [`Subscriber`]: https://docs.rs/tracing-core/0.1.10/tracing_core/subscriber/trait.Subscriber.html
@@ -97,4 +98,4 @@ async fn main() {
 [`tracing`]: https://docs.rs/tracing-subscriber
 [`reqwest`]: https://docs.rs/reqwest/0.11.4/reqwest/
 [`tokio`]: https://docs.rs/tokio/1.8.1/tokio/
-[`JsonStorageLayer`]: https://docs.rs/tracing-bunyan-formatter/0.1.6/tracing_bunyan_formatter/struct.JsonStorageLayer.html
+[`JsonStorageLayer`]: https://docs.rs/tracing-bunyan-formatter/0.3.0/tracing_bunyan_formatter/struct.JsonStorageLayer.html
