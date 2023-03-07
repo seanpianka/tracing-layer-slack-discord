@@ -1,5 +1,5 @@
 use regex::Regex;
-use tracing::{info, warn, instrument};
+use tracing::{info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 use tracing_layer_slack::{EventFilters, SlackLayer};
