@@ -4,30 +4,14 @@ use serde::Serialize;
 /// converted into this format.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SlackPayload {
-    channel: String,
-    username: String,
     text: String,
     #[serde(skip_serializing)]
     webhook_url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    icon_emoji: Option<String>,
 }
 
 impl SlackPayload {
-    pub(crate) fn new(
-        channel: String,
-        username: String,
-        text: String,
-        webhook_url: String,
-        icon_emoji: Option<String>,
-    ) -> Self {
-        Self {
-            channel,
-            username,
-            text,
-            webhook_url,
-            icon_emoji,
-        }
+    pub(crate) fn new(text: String, webhook_url: String) -> Self {
+        Self { text, webhook_url }
     }
 }
 

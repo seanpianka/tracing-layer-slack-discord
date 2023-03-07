@@ -6,7 +6,7 @@ use tracing_bunyan_formatter::JsonStorage;
 use tracing_subscriber::{layer::Context, Layer};
 
 use crate::filters::{EventFilters, Filter};
-use crate::worker::{WorkerMessage, SlackBackgroundWorker};
+use crate::worker::{SlackBackgroundWorker, WorkerMessage};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ pub struct SlackLayer {
 
     /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
     /// worker's receive-send loop.
-    shutdown_sender: ChannelSender,
+    slack_sender: ChannelSender,
 }
 
 impl SlackLayer {
@@ -69,11 +69,11 @@ impl SlackLayer {
             field_exclusion_filters,
             event_by_field_filters,
             config,
-            shutdown_sender: tx.clone(),
+            slack_sender: tx.clone(),
         };
         let worker = SlackBackgroundWorker {
             sender: tx,
-            handle: tokio::spawn(worker(rx))
+            handle: tokio::spawn(worker(rx)),
         };
         (layer, worker)
     }
@@ -158,7 +158,7 @@ impl SlackLayerBuilder {
 }
 
 impl<S> Layer<S> for SlackLayer
-    where
+where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
@@ -220,10 +220,8 @@ impl<S> Layer<S> for SlackLayer
             map_serializer.end()?;
 
             let span = match &current_span {
-                Some(span) => {
-                    span.metadata().name()
-                }
-                None => "None".into()
+                Some(span) => span.metadata().name(),
+                None => "None".into(),
             };
 
             let metadata = {
@@ -242,10 +240,12 @@ impl<S> Layer<S> for SlackLayer
                     "{}",
                     "```",
                 ),
-                event.metadata().level().to_string(), message,
+                event.metadata().level().to_string(),
+                message,
                 span,
                 target,
-                event.metadata().file().unwrap_or("Unknown"), event.metadata().line().unwrap_or(0),
+                event.metadata().file().unwrap_or("Unknown"),
+                event.metadata().line().unwrap_or(0),
                 metadata
             );
 
@@ -254,14 +254,8 @@ impl<S> Layer<S> for SlackLayer
 
         let result: Result<String, crate::filters::FilterError> = format();
         if let Ok(formatted) = result {
-            let payload = SlackPayload::new(
-                self.config.channel_name.clone(),
-                self.config.username.clone(),
-                formatted,
-                self.config.webhook_url.clone(),
-                self.config.icon_emoji.clone(),
-            );
-            if let Err(e) = self.shutdown_sender.send(WorkerMessage::Data(payload)) {
+            let payload = SlackPayload::new(formatted, self.config.webhook_url.clone());
+            if let Err(e) = self.slack_sender.send(WorkerMessage::Data(payload)) {
                 tracing::error!(err = %e, "failed to send slack payload to given channel")
             };
         }
