@@ -5,10 +5,12 @@ use tracing::{Event, Subscriber};
 use tracing_bunyan_formatter::JsonStorage;
 use tracing_subscriber::{layer::Context, Layer};
 
-use crate::filters::{EventFilters, Filter};
+use crate::filters::{EventFilters, Filter, FilterError};
 use crate::worker::{SlackBackgroundWorker, WorkerMessage};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 use std::collections::HashMap;
+use std::str::FromStr;
+use tracing::log::LevelFilter;
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackLayer {
@@ -39,6 +41,9 @@ pub struct SlackLayer {
     /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
     field_exclusion_filters: Option<Vec<Regex>>,
 
+    /// Filter events by their level.
+    level_filter: Option<String>,
+
     /// Configure the layer's connection to the Slack Webhook API.
     config: SlackConfig,
 
@@ -60,6 +65,7 @@ impl SlackLayer {
         message_filters: Option<EventFilters>,
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
+        level_filter: Option<String>,
         config: SlackConfig,
     ) -> (SlackLayer, SlackBackgroundWorker) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -68,6 +74,7 @@ impl SlackLayer {
             message_filters,
             field_exclusion_filters,
             event_by_field_filters,
+            level_filter,
             config,
             slack_sender: tx.clone(),
         };
@@ -96,6 +103,7 @@ pub struct SlackLayerBuilder {
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<Regex>>,
+    level_filters: Option<String>,
     config: Option<SlackConfig>,
 }
 
@@ -106,6 +114,7 @@ impl SlackLayerBuilder {
             message_filters: None,
             event_by_field_filters: None,
             field_exclusion_filters: None,
+            level_filters: None,
             config: None,
         }
     }
@@ -145,6 +154,12 @@ impl SlackLayerBuilder {
         self
     }
 
+    /// Configure which levels of events to send to Slack.
+    pub fn level_filters(mut self, level_filters: String) -> Self {
+        self.level_filters = Some(level_filters);
+        self
+    }
+
     /// Create a SlackLayer and its corresponding background worker to (async) send the messages.
     pub fn build(self) -> (SlackLayer, SlackBackgroundWorker) {
         SlackLayer::new(
@@ -152,6 +167,7 @@ impl SlackLayerBuilder {
             self.message_filters,
             self.event_by_field_filters,
             self.field_exclusion_filters,
+            self.level_filters,
             self.config.unwrap_or_else(SlackConfig::new_from_env),
         )
     }
@@ -192,7 +208,19 @@ where
                         .flatten()
                 })
                 .unwrap_or_else(|| "No message");
+
             self.message_filters.process(message)?;
+            if let Some(level_filters) = &self.level_filter {
+                let message_level = {
+                    LevelFilter::from_str(event.metadata().level().to_string().as_str())
+                        .map_err(|e| FilterError::IoError(Box::new(e)))?
+                };
+                let level_threshold =
+                    LevelFilter::from_str(level_filters).map_err(|e| FilterError::IoError(Box::new(e)))?;
+                if message_level > level_threshold {
+                    return Err(FilterError::PositiveFilterFailed);
+                }
+            }
 
             let mut metadata_buffer = Vec::new();
             let mut serializer = serde_json::Serializer::new(&mut metadata_buffer);

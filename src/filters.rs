@@ -6,6 +6,10 @@ use std::io::Error;
 
 use regex::Regex;
 
+pub(crate) trait Filter {
+    fn process(&self, value: &str) -> Result<(), FilterError>;
+}
+
 /// EventFilters describes two optional lists of regular expressions used to filter events.
 ///
 /// If provided, each expression is used in either negatively ("does NOT MATCH") or
@@ -21,6 +25,26 @@ impl EventFilters {
     /// Create a new set of matches.
     pub fn new(positive: Option<Vec<Regex>>, negative: Option<Vec<Regex>>) -> Self {
         Self { positive, negative }
+    }
+}
+
+impl Filter for EventFilters {
+    fn process(&self, value: &str) -> Result<(), FilterError> {
+        if let Some(negative) = &self.negative {
+            for filter in negative {
+                if filter.is_match(value) {
+                    return Err(FilterError::NegativeMatchFailed);
+                }
+            }
+        }
+        if let Some(positive) = &self.positive {
+            for filter in positive {
+                if !filter.is_match(value) {
+                    return Err(FilterError::PositiveFilterFailed);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -52,49 +76,6 @@ impl From<(Vec<Regex>, Vec<Regex>)> for EventFilters {
     }
 }
 
-pub(crate) enum FilterError {
-    PositiveFilterFailed,
-    NegativeMatchFailed,
-    IoError(std::io::Error),
-    SerdeError(serde_json::Error),
-}
-
-impl From<std::io::Error> for FilterError {
-    fn from(e: Error) -> Self {
-        FilterError::IoError(e)
-    }
-}
-
-impl From<serde_json::Error> for FilterError {
-    fn from(e: serde_json::Error) -> Self {
-        FilterError::SerdeError(e)
-    }
-}
-
-pub(crate) trait Filter {
-    fn process(&self, value: &str) -> Result<(), FilterError>;
-}
-
-impl Filter for EventFilters {
-    fn process(&self, value: &str) -> Result<(), FilterError> {
-        if let Some(negative) = &self.negative {
-            for filter in negative {
-                if filter.is_match(value) {
-                    return Err(FilterError::NegativeMatchFailed);
-                }
-            }
-        }
-        if let Some(positive) = &self.positive {
-            for filter in positive {
-                if !filter.is_match(value) {
-                    return Err(FilterError::PositiveFilterFailed);
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
 impl Filter for Option<EventFilters> {
     fn process(&self, value: &str) -> Result<(), FilterError> {
         if let Some(filter) = self {
@@ -123,5 +104,24 @@ impl Filter for Option<Vec<Regex>> {
         } else {
             Ok(())
         }
+    }
+}
+
+pub(crate) enum FilterError {
+    PositiveFilterFailed,
+    NegativeMatchFailed,
+    IoError(Box<dyn std::error::Error>),
+    SerdeError(serde_json::Error),
+}
+
+impl From<Box<dyn std::error::Error>> for FilterError {
+    fn from(e: Box<dyn std::error::Error>) -> Self {
+        FilterError::IoError(e)
+    }
+}
+
+impl From<serde_json::Error> for FilterError {
+    fn from(e: serde_json::Error) -> Self {
+        FilterError::SerdeError(e)
     }
 }

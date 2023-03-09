@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2021-10-27
+### Added
+- Filter messages sent to Slack by their level. Offers optional control over messages sent to Slack, independent of the tracing subscriber's current logging level.
+
+## [0.5.0] - 2021-10-27
+### Added
+- Remove all configuration except webhook URL, as Slack Apps control all configuration centrally now (and custom integrations are deprecated)
+
+### Documentation
+- Add example for filtering traces from being sent to Slack by the content of their messages
+
 ## [0.4.0] - 2021-10-27
 ### Added
 - Upgrade to tracing-subscriber and tracing-bunyan-formatter 0.3
