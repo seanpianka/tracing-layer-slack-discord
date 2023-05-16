@@ -13,7 +13,7 @@ pub async fn handler() {
 #[tokio::main]
 async fn main() {
     let targets_to_filter: EventFilters = Regex::new("exclude_messages_below_level").unwrap().into();
-    let (slack_layer, background_worker) = SlackLayer::builder(targets_to_filter)
+    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), targets_to_filter)
         .level_filters("info".to_string())
         .build();
     let subscriber = Registry::default().with(slack_layer);

@@ -6,6 +6,7 @@ use tracing_bunyan_formatter::JsonStorage;
 use tracing_subscriber::{layer::Context, Layer};
 
 use crate::filters::{EventFilters, Filter, FilterError};
+use crate::message::PayloadMessageType;
 use crate::worker::{SlackBackgroundWorker, WorkerMessage};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 use std::collections::HashMap;
@@ -44,6 +45,9 @@ pub struct SlackLayer {
     /// Filter events by their level.
     level_filter: Option<String>,
 
+    #[cfg(feature = "blocks")]
+    app_name: String,
+
     /// Configure the layer's connection to the Slack Webhook API.
     config: SlackConfig,
 
@@ -61,6 +65,7 @@ impl SlackLayer {
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
     /// to initialize the worker's processing and sending of HTTP requests to the Slack API.
     pub(crate) fn new(
+        app_name: String,
         target_filters: EventFilters,
         message_filters: Option<EventFilters>,
         event_by_field_filters: Option<EventFilters>,
@@ -75,6 +80,7 @@ impl SlackLayer {
             field_exclusion_filters,
             event_by_field_filters,
             level_filter,
+            app_name,
             config,
             slack_sender: tx.clone(),
         };
@@ -86,8 +92,8 @@ impl SlackLayer {
     }
 
     /// Create a new builder for SlackLayer.
-    pub fn builder(target_filters: EventFilters) -> SlackLayerBuilder {
-        SlackLayerBuilder::new(target_filters)
+    pub fn builder(app_name: String, target_filters: EventFilters) -> SlackLayerBuilder {
+        SlackLayerBuilder::new(app_name, target_filters)
     }
 }
 
@@ -99,6 +105,7 @@ impl SlackLayer {
 /// Several methods expose initialization of optional filtering mechanisms, along with Slack
 /// configuration that defaults to searching in the local environment variables.
 pub struct SlackLayerBuilder {
+    app_name: String,
     target_filters: EventFilters,
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
@@ -108,8 +115,9 @@ pub struct SlackLayerBuilder {
 }
 
 impl SlackLayerBuilder {
-    pub(crate) fn new(target_filters: EventFilters) -> Self {
+    pub(crate) fn new(app_name: String, target_filters: EventFilters) -> Self {
         Self {
+            app_name,
             target_filters,
             message_filters: None,
             event_by_field_filters: None,
@@ -163,6 +171,7 @@ impl SlackLayerBuilder {
     /// Create a SlackLayer and its corresponding background worker to (async) send the messages.
     pub fn build(self) -> (SlackLayer, SlackBackgroundWorker) {
         SlackLayer::new(
+            self.app_name,
             self.target_filters,
             self.message_filters,
             self.event_by_field_filters,
@@ -192,27 +201,22 @@ where
             let message = event_visitor
                 .values()
                 .get("message")
-                .map(|v| match v {
+                .and_then(|v| match v {
                     Value::String(s) => Some(s.as_str()),
                     _ => None,
                 })
-                .flatten()
                 .or_else(|| {
-                    event_visitor
-                        .values()
-                        .get("error")
-                        .map(|v| match v {
-                            Value::String(s) => Some(s.as_str()),
-                            _ => None,
-                        })
-                        .flatten()
+                    event_visitor.values().get("error").and_then(|v| match v {
+                        Value::String(s) => Some(s.as_str()),
+                        _ => None,
+                    })
                 })
-                .unwrap_or_else(|| "No message");
+                .unwrap_or("No message");
 
             self.message_filters.process(message)?;
             if let Some(level_filters) = &self.level_filter {
                 let message_level = {
-                    LevelFilter::from_str(event.metadata().level().to_string().as_str())
+                    LevelFilter::from_str(event.metadata().level().as_str())
                         .map_err(|e| FilterError::IoError(Box::new(e)))?
                 };
                 let level_threshold =
@@ -249,43 +253,130 @@ where
 
             let span = match &current_span {
                 Some(span) => span.metadata().name(),
-                None => "None".into(),
+                None => "",
             };
 
             let metadata = {
-                let data: HashMap<String, Value> = serde_json::from_slice(metadata_buffer.as_slice()).unwrap();
+                let data: HashMap<String, serde_json::Value> =
+                    serde_json::from_slice(metadata_buffer.as_slice()).unwrap();
                 serde_json::to_string_pretty(&data).unwrap()
             };
 
-            let message = format!(
-                concat!(
-                    "*Event [{}]*: \"{}\"\n",
-                    "*Span*: _{}_\n",
-                    "*Target*: _{}_\n",
-                    "*Source*: _{}#L{}_\n",
-                    "*Metadata*:\n",
-                    "```",
-                    "{}",
-                    "```",
-                ),
-                event.metadata().level().to_string(),
+            Ok(Self::format_payload(
+                self.app_name.as_str(),
                 message,
-                span,
+                event,
                 target,
-                event.metadata().file().unwrap_or("Unknown"),
-                event.metadata().line().unwrap_or(0),
-                metadata
-            );
-
-            Ok(message)
+                span,
+                metadata,
+            ))
         };
 
-        let result: Result<String, crate::filters::FilterError> = format();
+        let result: Result<PayloadMessageType, crate::filters::FilterError> = format();
         if let Ok(formatted) = result {
             let payload = SlackPayload::new(formatted, self.config.webhook_url.clone());
             if let Err(e) = self.slack_sender.send(WorkerMessage::Data(payload)) {
                 tracing::error!(err = %e, "failed to send slack payload to given channel")
             };
         }
+    }
+}
+
+impl SlackLayer {
+    #[cfg(feature = "blocks")]
+    fn format_payload(
+        app_name: &str,
+        message: &str,
+        event: &Event,
+        target: &str,
+        span: &str,
+        metadata: String,
+    ) -> PayloadMessageType {
+        let event_level = event.metadata().level();
+        let event_level_emoji = match *event_level {
+            tracing::Level::TRACE => ":mag:",
+            tracing::Level::DEBUG => ":bug:",
+            tracing::Level::INFO => ":information_source:",
+            tracing::Level::WARN => ":warning:",
+            tracing::Level::ERROR => ":x:",
+        };
+        let source_file = event.metadata().file().unwrap_or("Unknown");
+        let source_line = event.metadata().line().unwrap_or(0);
+        let blocks = serde_json::json!([
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": format!("{} - {} *{}*", app_name, event_level_emoji, event_level),
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("\"_{}_\"", message),
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": format!("*Target Span*\n{}::{}", target, span)
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": format!("*Source*\n{}#L{}", source_file, source_line)
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Metadata:*"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("```\n{}\n```", metadata)
+                }
+            }
+        ]);
+        let blocks_json = blocks.to_string();
+        PayloadMessageType::Blocks(blocks_json)
+    }
+
+    #[cfg(not(feature = "blocks"))]
+    fn format_payload(
+        app_name: &str,
+        message: &str,
+        event: &Event,
+        target: &str,
+        span: &str,
+        metadata: String,
+    ) -> PayloadMessageType {
+        let event_level = event.metadata().level().as_str();
+        let source_file = event.metadata().file().unwrap_or("Unknown");
+        let source_line = event.metadata().line().unwrap_or(0);
+        let payload = format!(
+            concat!(
+                "*Trace from {}*\n",
+                "*Event [{}]*: \"{}\"\n",
+                "*Target*: _{}_\n",
+                "*Span*: _{}_\n",
+                "*Metadata*:\n",
+                "```",
+                "{}",
+                "```\n",
+                "*Source*: _{}#L{}_",
+            ),
+            app_name, event_level, message, span, target, metadata, source_file, source_line,
+        );
+        PayloadMessageType::Text(payload)
     }
 }

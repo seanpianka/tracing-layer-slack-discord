@@ -2,7 +2,6 @@ use core::option::Option;
 use core::option::Option::Some;
 use core::result::Result;
 use core::result::Result::{Err, Ok};
-use std::io::Error;
 
 use regex::Regex;
 

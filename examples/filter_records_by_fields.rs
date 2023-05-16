@@ -18,7 +18,7 @@ pub async fn handler() {
 async fn main() {
     let targets_to_filter: EventFilters = Regex::new("filter_records_by_fields").unwrap().into();
     let event_fields_to_filter: EventFilters = Regex::new("password").unwrap().into();
-    let (slack_layer, background_worker) = SlackLayer::builder(targets_to_filter)
+    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), targets_to_filter)
         .event_by_field_filters(event_fields_to_filter)
         .build();
     let subscriber = Registry::default().with(slack_layer);

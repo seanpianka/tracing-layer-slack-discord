@@ -22,7 +22,7 @@ async fn main() {
         Regex::new(".*password.*").unwrap(),
         Regex::new("command").unwrap(),
     ];
-    let (slack_layer, background_worker) = SlackLayer::builder(targets_to_filter)
+    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), targets_to_filter)
         .field_exclusion_filters(fields_to_exclude)
         .build();
     let subscriber = Registry::default().with(slack_layer);

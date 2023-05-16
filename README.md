@@ -18,8 +18,7 @@ Configure the dependencies and pull directly from GitHub:
 [dependencies]
 tokio = "1.0"
 tracing = "0.1"
-tracing-futures = "0.2"
-tracing-layer-slack = "0.5"
+tracing-layer-slack = "0.6"
 ```
 
 ## Examples 
@@ -32,9 +31,19 @@ In this simple example, a layer is created using Slack configuration in the envi
 
 #### Slack Messages
 
-This screenshots shows the first three Slack messages sent while running this example. More messages are sent but were truncated from this image.
+This screenshots shows the first three Slack messages sent while running this example. More messages are sent but were truncated from these images.
 
-<img src="https://i.imgur.com/vefquEK.png" width="350" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
+##### Slack Blocks
+
+By default, messages are sent using [Slack Blocks](https://api.slack.com/block-kit). Here's an example:
+
+<img src="https://i.imgur.com/76V50Gr.png" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
+
+##### Slack Text
+
+By disabling the default features of this crate (and therefore disabling the `blocks` feature), you can revert to the older format which does not use the block kit.
+
+<img src="https://i.imgur.com/vefquEK.png" width="450" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
 
 #### Code example
 
@@ -78,7 +87,7 @@ async fn main() {
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
     // Initialize the layer and an async background task for sending our Slack messages.
-    let (slack_layer, background_worker) = SlackLayer::builder(target_to_filter).build();
+    let (slack_layer, background_worker) = SlackLayer::builder("my-app-name".to_string(), target_to_filter).build();
     // Initialize the global default subscriber for tracing events.
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();

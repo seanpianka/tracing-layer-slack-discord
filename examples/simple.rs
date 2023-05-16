@@ -25,7 +25,7 @@ async fn main() {
     // Only show events from where this example code is the target.
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
-    let (slack_layer, background_worker) = SlackLayer::builder(target_to_filter).build();
+    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), target_to_filter).build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
