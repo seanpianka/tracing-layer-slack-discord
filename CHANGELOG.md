@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2023-05-16
+### Added
+- Messages are now formatted with Slack's Block Kit by default. This can be disabled by disabling the default features so that `blocks` is not enabled.
+- Reduced the size of each message and added emojis.
+- Added feature flags for enabling gzip compression in reqwest and controlling the usage of native-tls versus rustls.
+
 ## [0.5.1] - 2021-10-27
 ### Added
 - Filter messages sent to Slack by their level. Offers optional control over messages sent to Slack, independent of the tracing subscriber's current logging level.
