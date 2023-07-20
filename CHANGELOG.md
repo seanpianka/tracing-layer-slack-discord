@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2023-07-20
+### Fixed
+- Handle network failures in message delivery with retry and exponential backoff
+
 ## [0.6.0] - 2023-05-16
 ### Added
 - Messages are now formatted with Slack's Block Kit by default. This can be disabled by disabling the default features so that `blocks` is not enabled.
