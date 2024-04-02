@@ -1,84 +1,50 @@
-# tracing-layer-slack
-[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
-[![Crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg?maxAge=2592000)](https://crates.io/crates/tracing-layer-slack)
+# tracing-layer-slack-discord
 
-`tracing-layer-slack` provides a [`Layer`] implementation for sending [`tracing`] events to Slack. 
+This repository contains [`Layer`] implementations for sending [`tracing`] events to Slack and Discord.
+
+[![tracing-layer-slack](https://img.shields.io/badge/tracing--layer--slack-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/slack)
+[![tracing-layer-slack on crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg)](https://crates.io/crates/tracing-layer-slack)
+[![Docs](https://docs.rs/tracing-layer-discord/badge.svg)](https://docs.rs/tracing-layer-discord)
+
+[![tracing-layer-discord](https://img.shields.io/badge/tracing--layer--discord-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/discord)
+[![tracing-layer-discord on crates.io](https://img.shields.io/crates/v/tracing-layer-discord.svg)](https://crates.io/crates/tracing-layer-discord)
+[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
 
 ## Synopsis
 
-[`SlackLayer`] sends POST requests via [`tokio`] and [`reqwest`] to a [Slack Webhook URL](https://api.slack.com/messaging/webhooks) for each new tracing event. The format of the `text` field is statically defined.
+[`DiscordLayer`] and [`SlackLayer`] send POST requests via [`tokio`] and [`reqwest`] to a [Discord Webhook URL](https://api.discord.com/messaging/webhooks) and [Slack Webhook URL](https://api.slack.com/messaging/webhooks) for each new tracing event, depending on the user-supplied event filtering rules. The format of the embedded message is statically defined.
 
-This layer also looks for an optional [`JsonStorageLayer`] [`extension`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html) on the parent [`span`] of each event. This extension may contain additional contextual information for the parent span of an event, which is included into the Slack message. 
+This layer also looks for an optional [`JsonStorageLayer`] [`extension`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html) on the parent [`span`] of each event. This extension may contain additional contextual information for the parent span of an event, which is included into the Discord message.
 
-## Installation
+## Features
 
-Configure the dependencies and pull directly from GitHub:
+- Send trace logs to Slack and Discord channels.
+- Configurable to suit your needs.
+- Easy to integrate with existing Rust applications.
+
+## Usage
+
+Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tokio = "1.0"
-tracing = "0.1"
-tracing-layer-slack = "0.6"
+tracing-layer-slack = "0"
+tracing-layer-discord = "0"
 ```
 
-## Examples 
+Then, in your application:
 
-See the full list of examples in [examples/](./examples).
-
-### Simple
-
-In this simple example, a layer is created using Slack configuration in the environment. An orphaned event (one with no parent span) and an event occurring within a span are created in three separate futures, and a number of messages are sent quickly to Slack.
-
-#### Slack Messages
-
-This screenshots shows the first three Slack messages sent while running this example. More messages are sent but were truncated from these images.
-
-##### Slack Blocks
-
-By default, messages are sent using [Slack Blocks](https://api.slack.com/block-kit). Here's an example:
-
-<img src="https://i.imgur.com/76V50Gr.png" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
-
-##### Slack Text
-
-By disabling the default features of this crate (and therefore disabling the `blocks` feature), you can revert to the older format which does not use the block kit.
-
-<img src="https://i.imgur.com/vefquEK.png" width="450" title="hover text" alt="Screenshot demonstrating the current formatter implementation for events sent as Slack messages">
-
-#### Code example
-
-Run this example locally using the following commands:
-```shell
-$ git clone https://github.com/seanpianka/tracing-layer-slack.git
-$ cd tracing-layer-slack
-$ cargo run --example simple
-```
-
-You must have Slack configuration exported in the environment.
-
-##### Source
 ```rust
 use regex::Regex;
-use tracing::{info, warn, instrument};
+use tracing::{info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 use tracing_layer_slack::{EventFilters, SlackLayer};
-
-#[instrument]
-pub async fn create_user(id: u64) -> u64 {
-    network_io(id).await;
-    info!(param = id, "A user was created");
-    id
-}
+use tracing_layer_discord::{EventFilters, DiscordLayer};
 
 #[instrument]
 pub async fn network_io(id: u64) {
-    warn!(user_id = id, "some network io happened");
-}
-
-pub async fn controller() {
-    info!("Orphan event without a parent span");
-    let (id1, id2, id3) = tokio::join!(create_user(2), create_user(4), create_user(6));
+    warn!(user_id = id, "had to retry the request once");
 }
 
 #[tokio::main]
@@ -86,21 +52,26 @@ async fn main() {
     // Only show events from where this example code is the target.
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
-    // Initialize the layer and an async background task for sending our Slack messages.
-    let (slack_layer, background_worker) = SlackLayer::builder("my-app-name".to_string(), target_to_filter).build();
-    // Initialize the global default subscriber for tracing events.
+    let app_name = "test-app".to_string();
+    let (slack_layer, slack_worker) = SlackLayer::builder(app_name.clone(), target_to_filter.clone()).build();
+    let (discord_layer, discord_worker) = DiscordLayer::builder(app_name, target_to_filter).build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    // Perform our application code that needs tracing and Slack messages.
-    controller().await;
-    // Waits for all Slack messages to be sent before exiting.
-    background_worker.shutdown().await;
+    network_io(123).await;
+    
+    slack_worker.shutdown().await;
+    discord_worker.shutdown().await;
 }
 ```
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 [`Layer`]: https://docs.rs/tracing-subscriber/0.3.0/tracing_subscriber/layer/trait.Layer.html
 [`SlackLayer`]: https://docs.rs/tracing-layer-slack/0.2.2/tracing_layer_slack/struct.SlackLayer.html
+[`DiscordLayer`]: https://docs.rs/tracing-layer-discord/0.2.2/tracing_layer_discord/struct.DiscordLayer.html
 [`Span`]: https://docs.rs/tracing/0.1.13/tracing/struct.Span.html
 [`Subscriber`]: https://docs.rs/tracing-core/0.1.10/tracing_core/subscriber/trait.Subscriber.html
 [`tracing`]: https://docs.rs/tracing

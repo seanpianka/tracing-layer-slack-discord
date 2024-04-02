@@ -1,20 +1,22 @@
-use regex::Regex;
-use serde::ser::{SerializeMap, Serializer};
-use serde_json::Value;
-use tracing::{Event, Subscriber};
-use tracing_bunyan_formatter::JsonStorage;
-use tracing_subscriber::{layer::Context, Layer};
-
-use crate::filters::{EventFilters, Filter, FilterError};
-use crate::message::PayloadMessageType;
-use crate::worker::{SlackBackgroundWorker, WorkerMessage};
-use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::log::LevelFilter;
 
-/// Layer for forwarding tracing events to Slack.
-pub struct SlackLayer {
+use regex::Regex;
+use serde::ser::SerializeMap;
+use serde::Serializer;
+use serde_json::Value;
+use tracing::{Event, Subscriber};
+use tracing::log::LevelFilter;
+use tracing_bunyan_formatter::JsonStorage;
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
+
+use crate::{BackgroundWorker, ChannelSender, Config, EventFilters, WebhookMessageFactory, WebhookMessageInputs, WorkerMessage};
+use crate::filters::{Filter, FilterError};
+use crate::worker::worker;
+
+/// Layer for forwarding tracing events to webhook endpoints.
+pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
     /// Filter events by their target.
     ///
     /// Filter type semantics:
@@ -36,7 +38,7 @@ pub struct SlackLayer {
     /// - Negative: Exclude the event if its key does NOT MATCH a given regex.
     event_by_field_filters: Option<EventFilters>,
 
-    /// Filter fields of events from being sent to Slack.
+    /// Filter fields of events from being sent to Discord.
     ///
     /// Filter type semantics:
     /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
@@ -45,25 +47,26 @@ pub struct SlackLayer {
     /// Filter events by their level.
     level_filter: Option<String>,
 
-    #[cfg(feature = "blocks")]
     app_name: String,
 
-    /// Configure the layer's connection to the Slack Webhook API.
-    config: SlackConfig,
+    /// Configure the layer's connection to the Webhook API.
+    config: C,
+
+    factory: std::marker::PhantomData<F>,
 
     /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
     /// worker's receive-send loop.
-    slack_sender: ChannelSender,
+    sender: ChannelSender,
 }
 
-impl SlackLayer {
-    /// Create a new layer for forwarding messages to Slack, using a specified
+impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
+    /// Create a new layer for forwarding messages to Discord, using a specified
     /// configuration. This method spawns a task onto the tokio runtime to begin sending tracing
-    /// events to Slack.
+    /// events to Discord.
     ///
     /// Returns the tracing_subscriber::Layer impl to add to a registry, an unbounded-mpsc sender
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
-    /// to initialize the worker's processing and sending of HTTP requests to the Slack API.
+    /// to initialize the worker's processing and sending of HTTP requests to the Discord API.
     pub(crate) fn new(
         app_name: String,
         target_filters: EventFilters,
@@ -71,10 +74,10 @@ impl SlackLayer {
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
         level_filter: Option<String>,
-        config: SlackConfig,
-    ) -> (SlackLayer, SlackBackgroundWorker) {
+        config: C,
+    ) -> (WebhookLayer<C, F>, BackgroundWorker) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let layer = SlackLayer {
+        let layer = WebhookLayer {
             target_filters,
             message_filters,
             field_exclusion_filters,
@@ -82,41 +85,44 @@ impl SlackLayer {
             level_filter,
             app_name,
             config,
-            slack_sender: tx.clone(),
+            factory: Default::default(),
+            sender: tx.clone(),
         };
-        let worker = SlackBackgroundWorker {
+        let worker = BackgroundWorker {
             sender: tx,
             handle: tokio::spawn(worker(rx)),
         };
         (layer, worker)
     }
 
-    /// Create a new builder for SlackLayer.
-    pub fn builder(app_name: String, target_filters: EventFilters) -> SlackLayerBuilder {
-        SlackLayerBuilder::new(app_name, target_filters)
+    /// Create a new builder for DiscordLayer.
+    pub fn builder(app_name: String, target_filters: EventFilters) -> WebhookLayerBuilder<C, F> {
+        WebhookLayerBuilder::new(app_name, target_filters)
     }
 }
 
-/// A builder for creating a Slack layer.
+/// A builder for creating a webhook layer.
 ///
-/// The layer requires a regex for selecting events to be sent to Slack by their target. Specifying
+/// The layer requires a regex for selecting events to be sent to Discord by their target. Specifying
 /// no filter (e.g. ".*") will cause an explosion in the number of messages observed by the layer.
 ///
-/// Several methods expose initialization of optional filtering mechanisms, along with Slack
+/// Several methods expose initialization of optional filtering mechanisms, along with Discord
 /// configuration that defaults to searching in the local environment variables.
-pub struct SlackLayerBuilder {
+pub struct WebhookLayerBuilder<C: Config, F: WebhookMessageFactory> {
+    factory: std::marker::PhantomData<F>,
     app_name: String,
     target_filters: EventFilters,
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<Regex>>,
     level_filters: Option<String>,
-    config: Option<SlackConfig>,
+    config: Option<C>,
 }
 
-impl SlackLayerBuilder {
+impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
     pub(crate) fn new(app_name: String, target_filters: EventFilters) -> Self {
         Self {
+            factory: Default::default(),
             app_name,
             target_filters,
             message_filters: None,
@@ -147,7 +153,7 @@ impl SlackLayerBuilder {
         self
     }
 
-    /// Filter fields of events from being sent to Slack.
+    /// Filter fields of events from being sent to Discord.
     ///
     /// Filter type semantics:
     /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
@@ -156,35 +162,37 @@ impl SlackLayerBuilder {
         self
     }
 
-    /// Configure the layer's connection to the Slack Webhook API.
-    pub fn slack_config(mut self, config: SlackConfig) -> Self {
+    /// Configure the layer's connection to the Discord Webhook API.
+    pub fn config(mut self, config: C) -> Self {
         self.config = Some(config);
         self
     }
 
-    /// Configure which levels of events to send to Slack.
+    /// Configure which levels of events to send to Discord.
     pub fn level_filters(mut self, level_filters: String) -> Self {
         self.level_filters = Some(level_filters);
         self
     }
 
-    /// Create a SlackLayer and its corresponding background worker to (async) send the messages.
-    pub fn build(self) -> (SlackLayer, SlackBackgroundWorker) {
-        SlackLayer::new(
+    /// Create a DiscordLayer and its corresponding background worker to (async) send the messages.
+    pub fn build(self) -> (WebhookLayer<C, F>, BackgroundWorker) {
+        WebhookLayer::new(
             self.app_name,
             self.target_filters,
             self.message_filters,
             self.event_by_field_filters,
             self.field_exclusion_filters,
             self.level_filters,
-            self.config.unwrap_or_else(SlackConfig::new_from_env),
+            self.config.unwrap_or_else(C::new_from_env),
         )
     }
 }
 
-impl<S> Layer<S> for SlackLayer
+impl<S, C, F> Layer<S> for WebhookLayer<C, F>
 where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    C: Config+ 'static,
+    F: WebhookMessageFactory + 'static,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let current_span = ctx.lookup_current();
@@ -257,126 +265,28 @@ where
             };
 
             let metadata = {
-                let data: HashMap<String, serde_json::Value> =
-                    serde_json::from_slice(metadata_buffer.as_slice()).unwrap();
+                let data: HashMap<String, Value> = serde_json::from_slice(metadata_buffer.as_slice()).unwrap();
                 serde_json::to_string_pretty(&data).unwrap()
             };
 
-            Ok(Self::format_payload(
-                self.app_name.as_str(),
-                message,
-                event,
-                target,
-                span,
+            Ok(F::create(WebhookMessageInputs {
+                app_name: self.app_name.clone(),
+                message: message.to_string(),
+                event_level: *event.metadata().level(),
+                source_file: event.metadata().file().unwrap_or("Unknown").to_string(),
+                source_line: event.metadata().line().unwrap_or(0),
+                target: target.to_string(),
+                span: span.to_string(),
                 metadata,
-            ))
+                webhook_url: self.config.webhook_url().to_string(),
+            }))
         };
 
-        let result: Result<PayloadMessageType, crate::filters::FilterError> = format();
+        let result: Result<_, FilterError> = format();
         if let Ok(formatted) = result {
-            let payload = SlackPayload::new(formatted, self.config.webhook_url.clone());
-            if let Err(e) = self.slack_sender.send(WorkerMessage::Data(payload)) {
-                tracing::error!(err = %e, "failed to send slack payload to given channel")
+            if let Err(e) = self.sender.send(WorkerMessage::Data(Box::new(formatted))) {
+                tracing::error!(err = %e, "failed to send discord payload to given channel")
             };
         }
-    }
-}
-
-impl SlackLayer {
-    #[cfg(feature = "blocks")]
-    fn format_payload(
-        app_name: &str,
-        message: &str,
-        event: &Event,
-        target: &str,
-        span: &str,
-        metadata: String,
-    ) -> PayloadMessageType {
-        let event_level = event.metadata().level();
-        let event_level_emoji = match *event_level {
-            tracing::Level::TRACE => ":mag:",
-            tracing::Level::DEBUG => ":bug:",
-            tracing::Level::INFO => ":information_source:",
-            tracing::Level::WARN => ":warning:",
-            tracing::Level::ERROR => ":x:",
-        };
-        let source_file = event.metadata().file().unwrap_or("Unknown");
-        let source_line = event.metadata().line().unwrap_or(0);
-        let blocks = serde_json::json!([
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": format!("{} - {} *{}*", app_name, event_level_emoji, event_level),
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("\"_{}_\"", message),
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": format!("*Target Span*\n{}::{}", target, span)
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": format!("*Source*\n{}#L{}", source_file, source_line)
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Metadata:*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("```\n{}\n```", metadata)
-                }
-            }
-        ]);
-        let blocks_json = blocks.to_string();
-        PayloadMessageType::Blocks(blocks_json)
-    }
-
-    #[cfg(not(feature = "blocks"))]
-    fn format_payload(
-        app_name: &str,
-        message: &str,
-        event: &Event,
-        target: &str,
-        span: &str,
-        metadata: String,
-    ) -> PayloadMessageType {
-        let event_level = event.metadata().level().as_str();
-        let source_file = event.metadata().file().unwrap_or("Unknown");
-        let source_line = event.metadata().line().unwrap_or(0);
-        let payload = format!(
-            concat!(
-                "*Trace from {}*\n",
-                "*Event [{}]*: \"{}\"\n",
-                "*Target*: _{}_\n",
-                "*Span*: _{}_\n",
-                "*Metadata*:\n",
-                "```",
-                "{}",
-                "```\n",
-                "*Source*: _{}#L{}_",
-            ),
-            app_name, event_level, message, span, target, metadata, source_file, source_line,
-        );
-        PayloadMessageType::Text(payload)
     }
 }

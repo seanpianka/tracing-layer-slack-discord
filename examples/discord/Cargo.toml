@@ -1,0 +1,19 @@
+[package]
+version = "0.1.4"
+edition = "2018"
+name = "tracing-layer-discord-examples"
+description = "Example implementation for Discord"
+publish = false
+
+[dependencies]
+tracing-layer-core = { path = "../../core" }
+tracing-layer-discord = { path = "../../layers/discord" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", default-features = false, features = ["test-util", "sync", "macros", "rt-multi-thread"] }
+reqwest = { version = "0.11", default-features = false }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = "0.3"
+tracing-bunyan-formatter = { default-features = false, version = "0.3" }
+regex = "1"
