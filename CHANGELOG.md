@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2024-04-01
+### Fixed
+- always print error information
+
 ## [0.6.2] - 2024-04-01
 ### Fixed
 - do not println debugging logs when compiled in release mode
