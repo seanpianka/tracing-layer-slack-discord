@@ -1,6 +1,6 @@
 [package]
 name = "tracing-layer-slack"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to Slack"
@@ -25,6 +25,7 @@ native-tls = [ "reqwest/default-tls" ]
 rustls = [ "reqwest/rustls-tls" ]
 
 [dependencies]
+debug_print = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", default-features = false, features = ["test-util", "sync", "macros", "rt-multi-thread"] }

@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use debug_print::debug_println;
+use tokio::sync::Mutex;
 use crate::message::SlackPayload;
 use crate::{ChannelReceiver, ChannelSender};
 use tokio::task::JoinHandle;
@@ -20,13 +23,13 @@ pub(crate) async fn worker(mut rx: ChannelReceiver) {
                 while retries < MAX_RETRIES {
                     match client.post(webhook_url.clone()).body(payload.clone()).send().await {
                         Ok(res) => {
-                            println!("slack message sent: {:?}", &res);
+                            debug_println!("slack message sent: {:?}", &res);
                             let res_text = res.text().await.unwrap();
-                            println!("slack message response: {}", res_text);
+                            debug_println!("slack message response: {}", res_text);
                             break; // Success, break out of the retry loop
                         }
                         Err(e) => {
-                            println!("{}", format!("failed to send slack message: {}", e));
+                            debug_println!("failed to send slack message: {}", e);
                         }
                     };
 
@@ -52,9 +55,10 @@ pub(crate) async fn worker(mut rx: ChannelReceiver) {
 /// `tracing-layer-slack` synchronously generates payloads to send to the Slack API using the
 /// tracing events from the global subscriber. However, all network requests are offloaded onto
 /// an unbuffered channel and processed by a provided future acting as an asynchronous worker.
+#[derive(Debug, Clone)]
 pub struct SlackBackgroundWorker {
     pub(crate) sender: ChannelSender,
-    pub(crate) handle: JoinHandle<()>,
+    pub(crate) handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl SlackBackgroundWorker {
@@ -64,7 +68,12 @@ impl SlackBackgroundWorker {
     /// sent.
     pub async fn shutdown(self) {
         self.sender.send(WorkerMessage::Shutdown).unwrap();
-        self.handle.await.unwrap();
+        let mut guard = self.handle.lock().await;
+        if let Some(handle) = guard.take() {
+            let _ = handle.await;
+        } else {
+            debug_println!("worker handle is already dropped");
+        }
     }
 }
 

@@ -11,6 +11,8 @@ use crate::worker::{SlackBackgroundWorker, WorkerMessage};
 use crate::{config::SlackConfig, message::SlackPayload, worker::worker, ChannelSender};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::log::LevelFilter;
 
 /// Layer for forwarding tracing events to Slack.
@@ -86,7 +88,7 @@ impl SlackLayer {
         };
         let worker = SlackBackgroundWorker {
             sender: tx,
-            handle: tokio::spawn(worker(rx)),
+            handle: Arc::new(Mutex::new(Some(tokio::spawn(worker(rx))))),
         };
         (layer, worker)
     }
