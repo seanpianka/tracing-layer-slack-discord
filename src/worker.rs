@@ -67,7 +67,14 @@ impl SlackBackgroundWorker {
     /// Without invoking`.teardown()`, your application may exit before all Slack messages can be
     /// sent.
     pub async fn shutdown(self) {
-        self.sender.send(WorkerMessage::Shutdown).unwrap();
+        match self.sender.send(WorkerMessage::Shutdown) {
+            Ok(..) => {
+                debug_println!("slack worker shutdown");
+            }
+            Err(e) => {
+                println!("ERROR: failed to send shutdown message to slack worker: {}", e);
+            }
+        }
         let mut guard = self.handle.lock().await;
         if let Some(handle) = guard.take() {
             let _ = handle.await;
