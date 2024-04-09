@@ -1,11 +1,6 @@
-use core::option::Option;
-use core::option::Option::Some;
-use core::result::Result;
-use core::result::Result::{Err, Ok};
-
 use regex::Regex;
 
-pub(crate) trait Filter {
+pub trait Filter {
     fn process(&self, value: &str) -> Result<(), FilterError>;
 }
 
@@ -13,6 +8,7 @@ pub(crate) trait Filter {
 ///
 /// If provided, each expression is used in either negatively ("does NOT MATCH") or
 /// positively ("does MATCH") filter against a specified value.
+#[derive(Debug, Clone, Default)]
 pub struct EventFilters {
     /// An optional list of one-or-more regular expressions to use for determining record inclusion.
     positive: Option<Vec<Regex>>,
@@ -106,7 +102,7 @@ impl Filter for Option<Vec<Regex>> {
     }
 }
 
-pub(crate) enum FilterError {
+pub enum FilterError {
     PositiveFilterFailed,
     NegativeMatchFailed,
     IoError(Box<dyn std::error::Error>),
