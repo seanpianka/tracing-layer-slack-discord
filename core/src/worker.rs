@@ -19,6 +19,7 @@ const MAX_RETRIES: usize = 10;
 /// `tracing-layer-discord` synchronously generates payloads to send to the Discord API using the
 /// tracing events from the global subscriber. However, all network requests are offloaded onto
 /// an unbuffered channel and processed by a provided future acting as an asynchronous worker.
+#[derive(Clone)]
 pub struct BackgroundWorker {
     pub(crate) sender: ChannelSender,
     pub(crate) handle: Arc<Mutex<Option<JoinHandle<()>>>>,
