@@ -1,6 +1,6 @@
 [package]
 name = "tracing-layer-discord"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to Discord"

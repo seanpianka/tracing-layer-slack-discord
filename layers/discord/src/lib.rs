@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
 
+pub use tracing_layer_core::BackgroundWorker;
+pub use tracing_layer_core::layer::WebhookLayer;
+pub use tracing_layer_core::filters::EventFilters;
 use serde::Serialize;
 use serde_json::Value;
+use tracing_layer_core::layer::WebhookLayerBuilder;
 use tracing_layer_core::{Config, WebhookMessage, WebhookMessageFactory, WebhookMessageInputs};
-pub use tracing_layer_core::filters::EventFilters;
-use tracing_layer_core::layer::{WebhookLayer, WebhookLayerBuilder};
 
 pub struct DiscordLayer;
 
