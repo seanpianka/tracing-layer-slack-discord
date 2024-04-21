@@ -287,7 +287,7 @@ where
         let result: Result<_, FilterError> = format();
         if let Ok(formatted) = result {
             if let Err(e) = self.sender.send(WorkerMessage::Data(Box::new(formatted))) {
-                tracing::error!(err = %e, "failed to send discord payload to given channel")
+                println!("failed to send discord payload to given channel, err = {}", e)
             };
         }
     }
