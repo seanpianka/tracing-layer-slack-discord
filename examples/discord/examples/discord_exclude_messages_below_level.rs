@@ -18,6 +18,7 @@ async fn main() {
         .build();
     let subscriber = Registry::default().with(discord_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
+    background_worker.start().await;
     handler().await;
     background_worker.shutdown().await;
 }

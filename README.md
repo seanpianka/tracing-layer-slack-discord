@@ -58,8 +58,13 @@ async fn main() {
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    // Start the workers and spawn the background async tasks on the current executor.
+    discord_worker.start();
+    slack_worker.start();
+
     network_io(123).await;
     
+    // Shutdown the workers and ensure their message cache is flushed.
     slack_worker.shutdown().await;
     discord_worker.shutdown().await;
 }

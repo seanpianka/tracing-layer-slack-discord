@@ -28,7 +28,7 @@ async fn main() {
     let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), target_to_filter).build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-
+    background_worker.start().await;
     controller().await;
     background_worker.shutdown().await;
 }

@@ -1,6 +1,6 @@
 [package]
 name = "tracing-layer-core"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to a webhook endpoint"
@@ -29,7 +29,7 @@ lambda-extension = { version = "0.10", optional = true}
 
 debug_print = "1"
 regex = "1"
-reqwest = { version = "0.12.3", default-features = false, features = ["http2", "charset"] }
+reqwest = { version = "0.12", default-features = false, features = ["http2", "charset"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", default-features = false, features = ["test-util", "sync", "macros", "rt-multi-thread"] }

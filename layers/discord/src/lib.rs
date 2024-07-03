@@ -172,7 +172,7 @@ impl DiscordConfig {
     /// available in the environment.
     ///
     /// Required env vars:
-    ///   * SLACK_WEBHOOK_URL
+    ///   * DISCORD_WEBHOOK_URL
     pub fn new_from_env() -> Self {
         Self::new(std::env::var("DISCORD_WEBHOOK_URL").expect("discord webhook url in env"))
     }

@@ -27,8 +27,7 @@ pub async fn controller() {
     // tokio::join!(create_user(2), create_user(4), create_user(6));
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let formatting_layer = tracing_bunyan_formatter::BunyanFormattingLayer::new("tracing_demo".into(), std::io::stdout);
     let (discord_layer, background_worker) = DiscordLayer::builder("test-app".to_string(), Default::default()).build();
     let subscriber = Registry::default()
@@ -36,7 +35,10 @@ async fn main() {
         .with(tracing_bunyan_formatter::JsonStorageLayer)
         .with(formatting_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    background_worker.start().await;
-    controller().await;
-    background_worker.shutdown().await;
+
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async move {
+        background_worker.start().await;
+        controller().await;
+        background_worker.shutdown().await;
+    });
 }

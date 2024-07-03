@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::error::Error;
+use std::future::Future;
+use std::process::Output;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -40,7 +43,7 @@ pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
     /// - Negative: Exclude the event if its key does NOT MATCH a given regex.
     event_by_field_filters: Option<EventFilters>,
 
-    /// Filter fields of events from being sent to Discord.
+    /// Filter fields of events from being sent to the webhook.
     ///
     /// Filter type semantics:
     /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
@@ -62,13 +65,13 @@ pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
 }
 
 impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
-    /// Create a new layer for forwarding messages to Discord, using a specified
-    /// configuration. This method spawns a task onto the tokio runtime to begin sending tracing
-    /// events to Discord.
+    /// Create a new layer for forwarding messages to the webhook, using a specified
+    /// configuration. The background worker must be started in order to spawn spawns
+    /// a task onto the tokio runtime to begin sending tracing events to the webhook.
     ///
     /// Returns the tracing_subscriber::Layer impl to add to a registry, an unbounded-mpsc sender
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
-    /// to initialize the worker's processing and sending of HTTP requests to the Discord API.
+    /// to initialize the worker's processing and sending of HTTP requests to the webhook.
     pub(crate) fn new(
         app_name: String,
         target_filters: EventFilters,
@@ -90,14 +93,15 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
             factory: Default::default(),
             sender: tx.clone(),
         };
-        let worker = BackgroundWorker {
+        let background_worker = BackgroundWorker {
             sender: tx,
-            handle: Arc::new(Mutex::new(Some(tokio::spawn(worker(rx))))),
+            handle: Arc::new(Mutex::new(None)),
+            rx: Arc::new(Mutex::new(rx)),
         };
-        (layer, worker)
+        (layer, background_worker)
     }
 
-    /// Create a new builder for DiscordLayer.
+    /// Create a new builder for the webhook layer.
     pub fn builder(app_name: String, target_filters: EventFilters) -> WebhookLayerBuilder<C, F> {
         WebhookLayerBuilder::new(app_name, target_filters)
     }
@@ -105,10 +109,10 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
 
 /// A builder for creating a webhook layer.
 ///
-/// The layer requires a regex for selecting events to be sent to Discord by their target. Specifying
+/// The layer requires a regex for selecting events to be sent to webhook by their target. Specifying
 /// no filter (e.g. ".*") will cause an explosion in the number of messages observed by the layer.
 ///
-/// Several methods expose initialization of optional filtering mechanisms, along with Discord
+/// Several methods expose initialization of optional filtering mechanisms, along with webhook
 /// configuration that defaults to searching in the local environment variables.
 pub struct WebhookLayerBuilder<C: Config, F: WebhookMessageFactory> {
     factory: std::marker::PhantomData<F>,
@@ -155,7 +159,7 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
         self
     }
 
-    /// Filter fields of events from being sent to Discord.
+    /// Filter fields of events from being sent to the webhook.
     ///
     /// Filter type semantics:
     /// - Positive: Exclude event fields if the field's key MATCHES any provided regular expressions.
@@ -164,19 +168,19 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
         self
     }
 
-    /// Configure the layer's connection to the Discord Webhook API.
+    /// Configure the layer's connection to the webhook.
     pub fn config(mut self, config: C) -> Self {
         self.config = Some(config);
         self
     }
 
-    /// Configure which levels of events to send to Discord.
+    /// Configure which levels of events to send to the webhook.
     pub fn level_filters(mut self, level_filters: String) -> Self {
         self.level_filters = Some(level_filters);
         self
     }
 
-    /// Create a DiscordLayer and its corresponding background worker to (async) send the messages.
+    /// Create a webhook layer and its corresponding background worker to (async) send the messages.
     pub fn build(self) -> (WebhookLayer<C, F>, BackgroundWorker) {
         WebhookLayer::new(
             self.app_name,
@@ -287,7 +291,7 @@ where
         let result: Result<_, FilterError> = format();
         if let Ok(formatted) = result {
             if let Err(e) = self.sender.send(WorkerMessage::Data(Box::new(formatted))) {
-                println!("failed to send discord payload to given channel, err = {}", e)
+                println!("failed to send webhook payload to given channel, err = {}", e)
             };
         }
     }
