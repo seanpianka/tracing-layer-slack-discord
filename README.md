@@ -59,8 +59,8 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
     // Start the workers and spawn the background async tasks on the current executor.
-    discord_worker.start();
-    slack_worker.start();
+    discord_worker.start().await;
+    slack_worker.start().await;
 
     network_io(123).await;
     
