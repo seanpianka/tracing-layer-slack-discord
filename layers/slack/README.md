@@ -92,6 +92,8 @@ async fn main() {
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    // It must be explicitly started before any messages will be handled.
+    background_worker.start().await;
     // Perform our application code that needs tracing and Slack messages.
     controller().await;
     // Waits for all Slack messages to be sent before exiting.

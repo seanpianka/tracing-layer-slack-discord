@@ -86,6 +86,8 @@ async fn main() {
     let subscriber = Registry::default().with(discord_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    // It must be explicitly started before any messages will be handled.
+    background_worker.start().await;
     // Perform our application code that needs tracing and Discord messages.
     controller().await;
     // Waits for all Discord messages to be sent before exiting.
