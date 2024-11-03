@@ -7,7 +7,7 @@ pub use filters::EventFilters;
 pub use worker::BackgroundWorker;
 pub use worker::WorkerMessage;
 
-mod aws_lambda;
+// mod aws_lambda;
 pub mod filters;
 pub mod layer;
 mod worker;
