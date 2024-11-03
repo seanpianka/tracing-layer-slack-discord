@@ -52,7 +52,7 @@ impl WebhookMessageFactory for DiscordLayer {
             let mut truncated_message = String::new();
             if message.chars().count() > MAX_ERROR_MESSAGE_CHARS {
                 #[cfg(feature = "log-errors")]
-                println!(
+                eprintln!(
                     "WARN: Truncating message to {} characters, original: {}",
                     MAX_ERROR_MESSAGE_CHARS, message
                 );

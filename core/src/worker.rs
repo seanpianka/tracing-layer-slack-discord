@@ -67,7 +67,7 @@ impl BackgroundWorker {
             }
             Err(e) => {
                 #[cfg(feature = "log-errors")]
-                println!(
+                eprintln!(
                     "ERROR: failed to send shutdown message to webhook message worker: {}",
                     e
                 );
@@ -78,7 +78,7 @@ impl BackgroundWorker {
             let _ = handle.await;
         } else {
             #[cfg(feature = "log-errors")]
-            println!("ERROR: async task handle to webhook message worker has been already dropped");
+            eprintln!("ERROR: async task handle to webhook message worker has been already dropped");
         }
     }
 }
@@ -117,7 +117,7 @@ pub(crate) async fn worker(rx: &mut ChannelReceiver) {
                         }
                         Err(e) => {
                             #[cfg(feature = "log-errors")]
-                            println!("ERROR: failed to send webhook message: {}", e);
+                            eprintln!("ERROR: failed to send webhook message: {}", e);
                         }
                     };
 
