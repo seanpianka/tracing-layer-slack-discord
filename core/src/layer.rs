@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::future::Future;
-use std::process::Output;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -10,15 +7,16 @@ use serde::ser::SerializeMap;
 use serde::Serializer;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{Event, Subscriber};
 use tracing::log::LevelFilter;
+use tracing::{Event, Subscriber};
 use tracing_bunyan_formatter::JsonStorage;
-use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
+use tracing_subscriber::Layer;
 
-use crate::{BackgroundWorker, ChannelSender, Config, EventFilters, WebhookMessageFactory, WebhookMessageInputs, WorkerMessage};
 use crate::filters::{Filter, FilterError};
-use crate::worker::worker;
+use crate::{
+    BackgroundWorker, ChannelSender, Config, EventFilters, WebhookMessageFactory, WebhookMessageInputs, WorkerMessage,
+};
 
 /// Layer for forwarding tracing events to webhook endpoints.
 pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
@@ -197,7 +195,7 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
 impl<S, C, F> Layer<S> for WebhookLayer<C, F>
 where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
-    C: Config+ 'static,
+    C: Config + 'static,
     F: WebhookMessageFactory + 'static,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
