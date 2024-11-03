@@ -98,7 +98,7 @@ pub(crate) async fn worker(rx: &mut ChannelReceiver) {
             WorkerMessage::Data(payload) => {
                 let webhook_url = payload.webhook_url();
                 let payload_json = payload.serialize();
-                println!("sending webhook message: {}", &payload_json);
+                debug_println!("sending webhook message: {}", &payload_json);
 
                 let mut retries = 0;
                 while retries < MAX_RETRIES {
