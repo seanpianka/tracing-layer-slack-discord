@@ -289,7 +289,8 @@ where
         let result: Result<_, FilterError> = format();
         if let Ok(formatted) = result {
             if let Err(e) = self.sender.send(WorkerMessage::Data(Box::new(formatted))) {
-                println!("failed to send webhook payload to given channel, err = {}", e)
+                #[cfg(feature = "log-errors")]
+                println!("ERROR: failed to send webhook payload to given channel, err = {}", e)
             };
         }
     }

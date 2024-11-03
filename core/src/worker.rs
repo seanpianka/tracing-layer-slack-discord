@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use tokio::task::JoinHandle;
 use debug_print::debug_println;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 use crate::{ChannelReceiver, ChannelSender, WebhookMessage};
 
@@ -66,17 +66,21 @@ impl BackgroundWorker {
                 debug_println!("webhook message worker shutdown");
             }
             Err(e) => {
-                println!("ERROR: failed to send shutdown message to webhook message worker: {}", e);
+                #[cfg(feature = "log-errors")]
+                println!(
+                    "ERROR: failed to send shutdown message to webhook message worker: {}",
+                    e
+                );
             }
         }
         let mut guard = self.handle.lock().await;
         if let Some(handle) = guard.take() {
             let _ = handle.await;
         } else {
+            #[cfg(feature = "log-errors")]
             println!("ERROR: async task handle to webhook message worker has been already dropped");
         }
     }
-
 }
 
 /// A command sent to a worker containing a new message that should be sent to a webhook endpoint.
@@ -112,6 +116,7 @@ pub(crate) async fn worker(rx: &mut ChannelReceiver) {
                             break; // Success, break out of the retry loop
                         }
                         Err(e) => {
+                            #[cfg(feature = "log-errors")]
                             println!("ERROR: failed to send webhook message: {}", e);
                         }
                     };
