@@ -22,7 +22,7 @@ pub trait WebhookMessage: Debug + Send + Sync {
 }
 
 pub trait WebhookMessageFactory {
-    fn create(inputs: WebhookMessageInputs) -> impl WebhookMessage;
+    fn create<'a>(&'a self, inputs: WebhookMessageInputs) -> Box<dyn WebhookMessage>;
 }
 
 /// The data expected to be available for message producers.
@@ -32,7 +32,6 @@ pub struct WebhookMessageInputs {
     pub target: String,
     pub span: String,
     pub metadata: String,
-    pub webhook_url: String,
     pub source_line: u32,
     pub source_file: String,
     pub event_level: Level,
@@ -45,14 +44,3 @@ pub enum WebhookMessageSpec {
     TextWithEmbed(String, Vec<Value>),
     EmbedNoText(Vec<Value>),
 }
-
-pub trait Config {
-    fn webhook_url(&self) -> &str;
-
-    fn new_from_env() -> Self
-    where
-        Self: Sized;
-}
-
-#[cfg(test)]
-mod tests {}
