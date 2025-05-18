@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::future::Future;
-use std::process::Output;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -10,18 +7,23 @@ use serde::ser::SerializeMap;
 use serde::Serializer;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tracing::{Event, Subscriber};
 use tracing::log::LevelFilter;
+use tracing::{Event, Subscriber};
 use tracing_bunyan_formatter::JsonStorage;
-use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
+use tracing_subscriber::Layer;
 
-use crate::{BackgroundWorker, ChannelSender, Config, EventFilters, WebhookMessageFactory, WebhookMessageInputs, WorkerMessage};
 use crate::filters::{Filter, FilterError};
-use crate::worker::worker;
+use crate::{
+    BackgroundWorker, ChannelSender, EventFilters, WebhookMessageFactory, WebhookMessageInputs, WorkerMessage,
+};
 
 /// Layer for forwarding tracing events to webhook endpoints.
-pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
+pub struct WebhookLayer<F: WebhookMessageFactory> {
+    factory: F,
+
+    app_name: String,
+
     /// Filter events by their target.
     ///
     /// Filter type semantics:
@@ -52,19 +54,12 @@ pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
     /// Filter events by their level.
     level_filter: Option<String>,
 
-    app_name: String,
-
-    /// Configure the layer's connection to the Webhook API.
-    config: C,
-
-    factory: std::marker::PhantomData<F>,
-
     /// An unbounded sender, which the caller must send `WorkerMessage::Shutdown` in order to cancel
     /// worker's receive-send loop.
     sender: ChannelSender,
 }
 
-impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
+impl<F: WebhookMessageFactory> WebhookLayer<F> {
     /// Create a new layer for forwarding messages to the webhook, using a specified
     /// configuration. The background worker must be started in order to spawn spawns
     /// a task onto the tokio runtime to begin sending tracing events to the webhook.
@@ -73,24 +68,23 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
     /// used to shutdown the background worker, and a future to spawn as a task on a tokio runtime
     /// to initialize the worker's processing and sending of HTTP requests to the webhook.
     pub(crate) fn new(
+        factory: F,
         app_name: String,
         target_filters: EventFilters,
         message_filters: Option<EventFilters>,
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
         level_filter: Option<String>,
-        config: C,
-    ) -> (WebhookLayer<C, F>, BackgroundWorker) {
+    ) -> (WebhookLayer<F>, BackgroundWorker) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let layer = WebhookLayer {
+            factory,
+            app_name,
             target_filters,
             message_filters,
-            field_exclusion_filters,
             event_by_field_filters,
+            field_exclusion_filters,
             level_filter,
-            app_name,
-            config,
-            factory: Default::default(),
             sender: tx.clone(),
         };
         let background_worker = BackgroundWorker {
@@ -100,11 +94,6 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
         };
         (layer, background_worker)
     }
-
-    /// Create a new builder for the webhook layer.
-    pub fn builder(app_name: String, target_filters: EventFilters) -> WebhookLayerBuilder<C, F> {
-        WebhookLayerBuilder::new(app_name, target_filters)
-    }
 }
 
 /// A builder for creating a webhook layer.
@@ -112,30 +101,26 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
 /// The layer requires a regex for selecting events to be sent to webhook by their target. Specifying
 /// no filter (e.g. ".*") will cause an explosion in the number of messages observed by the layer.
 ///
-/// Several methods expose initialization of optional filtering mechanisms, along with webhook
-/// configuration that defaults to searching in the local environment variables.
-pub struct WebhookLayerBuilder<C: Config, F: WebhookMessageFactory> {
-    factory: std::marker::PhantomData<F>,
+/// Several methods expose initialization of optional filtering mechanisms.
+pub struct WebhookLayerBuilder<F: WebhookMessageFactory> {
+    factory: F,
     app_name: String,
     target_filters: EventFilters,
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<Regex>>,
     level_filters: Option<String>,
-    config: Option<C>,
 }
-
-impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
-    pub(crate) fn new(app_name: String, target_filters: EventFilters) -> Self {
+impl<F: WebhookMessageFactory> WebhookLayerBuilder<F> {
+    pub fn new(factory: F, app_name: String, target_filters: EventFilters) -> Self {
         Self {
-            factory: Default::default(),
+            factory,
             app_name,
             target_filters,
             message_filters: None,
             event_by_field_filters: None,
             field_exclusion_filters: None,
             level_filters: None,
-            config: None,
         }
     }
 
@@ -168,12 +153,6 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
         self
     }
 
-    /// Configure the layer's connection to the webhook.
-    pub fn config(mut self, config: C) -> Self {
-        self.config = Some(config);
-        self
-    }
-
     /// Configure which levels of events to send to the webhook.
     pub fn level_filters(mut self, level_filters: String) -> Self {
         self.level_filters = Some(level_filters);
@@ -181,23 +160,22 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
     }
 
     /// Create a webhook layer and its corresponding background worker to (async) send the messages.
-    pub fn build(self) -> (WebhookLayer<C, F>, BackgroundWorker) {
+    pub fn build(self) -> (WebhookLayer<F>, BackgroundWorker) {
         WebhookLayer::new(
+            self.factory,
             self.app_name,
             self.target_filters,
             self.message_filters,
             self.event_by_field_filters,
             self.field_exclusion_filters,
             self.level_filters,
-            self.config.unwrap_or_else(C::new_from_env),
         )
     }
 }
 
-impl<S, C, F> Layer<S> for WebhookLayer<C, F>
+impl<S, F> Layer<S> for WebhookLayer<F>
 where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
-    C: Config+ 'static,
     F: WebhookMessageFactory + 'static,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
@@ -275,7 +253,7 @@ where
                 serde_json::to_string_pretty(&data).unwrap()
             };
 
-            Ok(F::create(WebhookMessageInputs {
+            let message = self.factory.create(WebhookMessageInputs {
                 app_name: self.app_name.clone(),
                 message: message.to_string(),
                 event_level: *event.metadata().level(),
@@ -284,14 +262,16 @@ where
                 target: target.to_string(),
                 span: span.to_string(),
                 metadata,
-                webhook_url: self.config.webhook_url().to_string(),
-            }))
+            });
+
+            Ok(message)
         };
 
         let result: Result<_, FilterError> = format();
         if let Ok(formatted) = result {
-            if let Err(e) = self.sender.send(WorkerMessage::Data(Box::new(formatted))) {
-                println!("failed to send webhook payload to given channel, err = {}", e)
+            if let Err(e) = self.sender.send(WorkerMessage::Data(formatted)) {
+                #[cfg(feature = "log-errors")]
+                eprintln!("ERROR: failed to send webhook payload to given channel, err = {}", e)
             };
         }
     }

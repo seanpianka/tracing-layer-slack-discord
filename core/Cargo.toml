@@ -16,23 +16,36 @@ path = "src/lib.rs"
 doctest = false
 
 [features]
-default = ["rustls", "gzip"]
-gzip = [ "reqwest/gzip" ]
-native-tls = [ "reqwest/default-tls" ]
-rustls = [ "reqwest/rustls-tls" ]
-aws-lambda = [ "aws-config", "aws-sdk-lambda", "lambda-extension" ]
+default = ["rustls", "gzip", "log-errors"]
+gzip = ["reqwest/gzip"]
+native-tls = ["reqwest/default-tls"]
+rustls = ["reqwest/rustls-tls"]
+aws-lambda = ["aws-config", "aws-sdk-lambda", "lambda-extension"]
+log-errors = []
 
 [dependencies]
-aws-config = { version = "1.1" , optional = true}
-aws-sdk-lambda = { version = "1.20", optional = true}
-lambda-extension = { version = "0.10", optional = true}
+aws-config = { version = "1.1", optional = true }
+aws-sdk-lambda = { version = "1.20", optional = true }
+lambda-extension = { version = "0.10", optional = true }
 
 debug_print = "1"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["http2", "charset"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "http2",
+  "charset",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1", default-features = false, features = ["test-util", "sync", "macros", "rt-multi-thread"] }
+tokio = { version = "1", default-features = false, features = [
+  "test-util",
+  "sync",
+  "macros",
+  "rt-multi-thread",
+] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-bunyan-formatter = { default-features = false, version = "0.3" }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json", "env-filter"]}
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "json",
+  "env-filter",
+] }
