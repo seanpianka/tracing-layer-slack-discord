@@ -1,6 +1,6 @@
 [package]
 name = "tracing-layer-slack"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to Slack"
@@ -16,11 +16,12 @@ path = "src/lib.rs"
 doctest = false
 
 [features]
-default = ["blocks", "rustls", "gzip"]
+default = ["blocks", "rustls", "gzip", "log-errors"]
 blocks = []
 gzip = [ "tracing-layer-core/gzip" ]
 native-tls = [ "tracing-layer-core/native-tls" ]
 rustls = [ "tracing-layer-core/rustls" ]
+log-errors = [ "tracing-layer-core/log-errors" ]
 
 [dependencies]
 tracing-layer-core = { path = "../../core", version = "0.3.0" }

@@ -49,7 +49,7 @@ impl BackgroundWorker {
         let rx = self.rx.clone();
         let future = async move {
             let mut rx = rx.lock().await;
-            worker(&mut *rx).await;
+            worker(&mut rx).await;
         };
         let handle = tokio::spawn(future);
         let mut guard = self.handle.lock().await;

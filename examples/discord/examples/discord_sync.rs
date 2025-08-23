@@ -1,4 +1,4 @@
-use tracing::{info, instrument, warn, warn_span};
+use tracing::{info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 use tracing_layer_discord::DiscordLayer;
@@ -36,9 +36,13 @@ fn main() {
         .with(formatting_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async move {
-        background_worker.start().await;
-        controller().await;
-        background_worker.shutdown().await;
-    });
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            background_worker.start().await;
+            controller().await;
+            background_worker.shutdown().await;
+        });
 }

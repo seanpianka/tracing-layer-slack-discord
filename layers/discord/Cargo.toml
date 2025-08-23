@@ -1,6 +1,6 @@
 [package]
 name = "tracing-layer-discord"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to Discord"
@@ -16,14 +16,15 @@ path = "src/lib.rs"
 doctest = false
 
 [features]
-default = ["embed", "rustls", "gzip"]
+default = ["embed", "rustls", "gzip", "log-errors"]
 embed = []
 gzip = [ "tracing-layer-core/gzip" ]
 native-tls = [ "tracing-layer-core/native-tls" ]
 rustls = [ "tracing-layer-core/rustls" ]
+log-errors = [ "tracing-layer-core/log-errors" ]
 
 [dependencies]
-tracing-layer-core = { path = "../../core", version = "0.3.0" }
+tracing-layer-core = { path = "../../core", version = "0.3.0"}
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

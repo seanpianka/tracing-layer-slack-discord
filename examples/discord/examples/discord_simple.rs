@@ -1,4 +1,4 @@
-use tracing::{info, instrument, warn, warn_span};
+use tracing::{info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
 use tracing_layer_discord::DiscordLayer;
