@@ -1,11 +1,11 @@
 #![doc = include_str!("../README.md")]
 
-pub use tracing_layer_core::BackgroundWorker;
-pub use tracing_layer_core::layer::WebhookLayer;
-pub use tracing_layer_core::filters::EventFilters;
 use serde::Serialize;
 use serde_json::Value;
+pub use tracing_layer_core::filters::EventFilters;
+pub use tracing_layer_core::layer::WebhookLayer;
 use tracing_layer_core::layer::WebhookLayerBuilder;
+pub use tracing_layer_core::BackgroundWorker;
 use tracing_layer_core::{Config, WebhookMessage, WebhookMessageFactory, WebhookMessageInputs};
 
 pub struct DiscordLayer;
@@ -51,8 +51,9 @@ impl WebhookMessageFactory for DiscordLayer {
             // Truncate error_message if it exceeds the limit
             let mut truncated_message = String::new();
             if message.chars().count() > MAX_ERROR_MESSAGE_CHARS {
-                println!(
-                    "Truncating message to {} characters, original: {}",
+                #[cfg(feature = "log-errors")]
+                eprintln!(
+                    "WARN: Truncating message to {} characters, original: {}",
                     MAX_ERROR_MESSAGE_CHARS, message
                 );
                 let mut char_count = 0;
@@ -137,15 +138,15 @@ impl WebhookMessageFactory for DiscordLayer {
             let source_line = event.metadata().line().unwrap_or(0);
             let payload = format!(
                 concat!(
-                "*Trace from {}*\n",
-                "*Event [{}]*: \"{}\"\n",
-                "*Target*: _{}_\n",
-                "*Span*: _{}_\n",
-                "*Metadata*:\n",
-                "```",
-                "{}",
-                "```\n",
-                "*Source*: _{}#L{}_",
+                    "*Trace from {}*\n",
+                    "*Event [{}]*: \"{}\"\n",
+                    "*Target*: _{}_\n",
+                    "*Span*: _{}_\n",
+                    "*Metadata*:\n",
+                    "```",
+                    "{}",
+                    "```\n",
+                    "*Source*: _{}#L{}_",
                 ),
                 app_name, event_level, message, span, target, metadata, source_file, source_line,
             );
@@ -189,7 +190,10 @@ impl Config for DiscordConfig {
         &self.webhook_url
     }
 
-    fn new_from_env() -> Self where Self: Sized {
+    fn new_from_env() -> Self
+    where
+        Self: Sized,
+    {
         Self::new_from_env()
     }
 }
@@ -217,6 +221,4 @@ impl WebhookMessage for DiscordMessagePayload {
 }
 
 #[cfg(test)]
-mod tests {
-
-}
+mod tests {}

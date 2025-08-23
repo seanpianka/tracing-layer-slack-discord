@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use tokio::task::JoinHandle;
 use debug_print::debug_println;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
 use crate::{ChannelReceiver, ChannelSender, WebhookMessage};
 
@@ -66,17 +66,21 @@ impl BackgroundWorker {
                 debug_println!("webhook message worker shutdown");
             }
             Err(e) => {
-                println!("ERROR: failed to send shutdown message to webhook message worker: {}", e);
+                #[cfg(feature = "log-errors")]
+                eprintln!(
+                    "ERROR: failed to send shutdown message to webhook message worker: {}",
+                    e
+                );
             }
         }
         let mut guard = self.handle.lock().await;
         if let Some(handle) = guard.take() {
             let _ = handle.await;
         } else {
-            println!("ERROR: async task handle to webhook message worker has been already dropped");
+            #[cfg(feature = "log-errors")]
+            eprintln!("ERROR: async task handle to webhook message worker has been already dropped");
         }
     }
-
 }
 
 /// A command sent to a worker containing a new message that should be sent to a webhook endpoint.
@@ -94,7 +98,7 @@ pub(crate) async fn worker(rx: &mut ChannelReceiver) {
             WorkerMessage::Data(payload) => {
                 let webhook_url = payload.webhook_url();
                 let payload_json = payload.serialize();
-                println!("sending webhook message: {}", &payload_json);
+                debug_println!("sending webhook message: {}", &payload_json);
 
                 let mut retries = 0;
                 while retries < MAX_RETRIES {
@@ -112,7 +116,8 @@ pub(crate) async fn worker(rx: &mut ChannelReceiver) {
                             break; // Success, break out of the retry loop
                         }
                         Err(e) => {
-                            println!("ERROR: failed to send webhook message: {}", e);
+                            #[cfg(feature = "log-errors")]
+                            eprintln!("ERROR: failed to send webhook message: {}", e);
                         }
                     };
 
