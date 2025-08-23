@@ -1,11 +1,12 @@
 #![doc = include_str!("../README.md")]
 
-pub use tracing_layer_core::BackgroundWorker;
-pub use tracing_layer_core::layer::WebhookLayer;
-pub use tracing_layer_core::filters::EventFilters;
 use serde::Serialize;
+use std::sync::Arc;
+pub use tracing_layer_core::filters::EventFilters;
+pub use tracing_layer_core::layer::WebhookLayer;
 use tracing_layer_core::layer::WebhookLayerBuilder;
-use tracing_layer_core::{Config, WebhookMessage, WebhookMessageFactory, WebhookMessageInputs};
+pub use tracing_layer_core::BackgroundWorker;
+use tracing_layer_core::{Config, PingType, WebhookMessage, WebhookMessageFactory, WebhookMessageInputs};
 
 /// Layer for forwarding tracing events to Slack.
 pub struct SlackLayer;
@@ -85,7 +86,7 @@ impl WebhookMessageFactory for SlackLayer {
             SlackMessagePayload {
                 text: None,
                 blocks: Some(blocks_json),
-                webhook_url: inputs.webhook_url.to_string(),
+                webhook_url: inputs.config.webhook_url().to_string(),
             }
         }
         #[cfg(not(feature = "blocks"))]
@@ -141,11 +142,12 @@ impl WebhookMessage for SlackMessagePayload {
 /// Configuration describing how to forward tracing events to Slack.
 pub struct SlackConfig {
     pub(crate) webhook_url: String,
+    pub(crate) ping_type: Option<PingType>,
 }
 
 impl SlackConfig {
-    pub fn new(webhook_url: String) -> Self {
-        Self { webhook_url }
+    pub fn new(webhook_url: String, ping_type: Option<PingType>) -> Self {
+        Self { webhook_url, ping_type }
     }
 
     /// Create a new config for forwarding messages to Slack using configuration
@@ -154,7 +156,10 @@ impl SlackConfig {
     /// Required env vars:
     ///   * SLACK_WEBHOOK_URL
     pub fn new_from_env() -> Self {
-        Self::new(std::env::var("SLACK_WEBHOOK_URL").expect("slack webhook url in env"))
+        Self::new(
+            std::env::var("SLACK_WEBHOOK_URL").expect("slack webhook url in env"),
+            None,
+        )
     }
 }
 
@@ -169,12 +174,17 @@ impl Config for SlackConfig {
         &self.webhook_url
     }
 
-    fn new_from_env() -> Self where Self: Sized {
-        Self::new_from_env()
+    fn ping_type(&self) -> Option<PingType> {
+        self.ping_type
+    }
+
+    fn new_from_env() -> Arc<Self>
+    where
+        Self: Sized,
+    {
+        Arc::new(Self::new_from_env())
     }
 }
 
 #[cfg(test)]
-mod tests {
-
-}
+mod tests {}

@@ -53,7 +53,7 @@ pub struct WebhookLayer<C: Config, F: WebhookMessageFactory> {
     app_name: String,
 
     /// Configure the layer's connection to the Webhook API.
-    config: C,
+    config: Arc<C>,
 
     factory: std::marker::PhantomData<F>,
 
@@ -77,7 +77,7 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayer<C, F> {
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
         level_filter: Option<String>,
-        config: C,
+        config: Arc<C>,
     ) -> (WebhookLayer<C, F>, BackgroundWorker) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let layer = WebhookLayer {
@@ -120,7 +120,7 @@ pub struct WebhookLayerBuilder<C: Config, F: WebhookMessageFactory> {
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<Regex>>,
     level_filters: Option<String>,
-    config: Option<C>,
+    config: Option<Arc<C>>,
 }
 
 impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
@@ -167,7 +167,7 @@ impl<C: Config, F: WebhookMessageFactory> WebhookLayerBuilder<C, F> {
     }
 
     /// Configure the layer's connection to the webhook.
-    pub fn config(mut self, config: C) -> Self {
+    pub fn config(mut self, config: Arc<C>) -> Self {
         self.config = Some(config);
         self
     }
@@ -282,7 +282,7 @@ where
                 target: target.to_string(),
                 span: span.to_string(),
                 metadata,
-                webhook_url: self.config.webhook_url().to_string(),
+                config: self.config.clone(),
             }))
         };
 

@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-
+use std::sync::Arc;
 use serde_json::Value;
 use tracing::Level;
 
@@ -32,7 +32,7 @@ pub struct WebhookMessageInputs {
     pub target: String,
     pub span: String,
     pub metadata: String,
-    pub webhook_url: String,
+    pub config: Arc<dyn Config>,
     pub source_line: u32,
     pub source_file: String,
     pub event_level: Level,
@@ -49,9 +49,17 @@ pub enum WebhookMessageSpec {
 pub trait Config {
     fn webhook_url(&self) -> &str;
 
-    fn new_from_env() -> Self
+    fn ping_type(&self) -> Option<PingType>;
+
+    fn new_from_env() -> Arc<Self>
     where
         Self: Sized;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PingType {
+    Everyone,
+    Here,
 }
 
 #[cfg(test)]
