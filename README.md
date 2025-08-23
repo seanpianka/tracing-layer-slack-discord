@@ -72,7 +72,7 @@ async fn main() {
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache-2.0 License - see the [LICENSE](LICENSE) file for details.
 
 [`Layer`]: https://docs.rs/tracing-subscriber/0.3.0/tracing_subscriber/layer/trait.Layer.html
 [`SlackLayer`]: https://docs.rs/tracing-layer-slack/0.2.2/tracing_layer_slack/struct.SlackLayer.html
