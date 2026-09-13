@@ -1,5 +1,8 @@
 # tracing-layer-slack
 
+[![tracing-layer-slack documentation](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
+[![tracing-layer-slack on crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg)](https://crates.io/crates/tracing-layer-slack)
+
 `tracing-layer-slack` converts filtered tracing events into Slack Platform Messages. Rich Block Kit presentation is the default; text presentation is selected at runtime.
 
 ```rust,no_run
