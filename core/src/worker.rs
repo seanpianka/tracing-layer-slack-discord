@@ -65,12 +65,11 @@ struct QueueState {
     sender: mpsc::UnboundedSender<Command>,
 }
 
-#[doc(hidden)]
 #[derive(Clone, Debug)]
-pub struct Enqueue(Arc<Mutex<QueueState>>);
+pub(crate) struct Enqueue(Arc<Mutex<QueueState>>);
 
 impl Enqueue {
-    pub fn send(&self, body: String) -> Result<(), Error> {
+    pub(crate) fn send(&self, body: String) -> Result<(), Error> {
         let state = self.0.lock().map_err(|_| Error::DeliveryStopped)?;
         if !state.accepting {
             return Err(Error::DeliveryStopped);
@@ -180,8 +179,7 @@ pub enum DeliveryFailureReason {
     RetryBudgetExceeded,
 }
 
-#[doc(hidden)]
-pub fn delivery_channel(webhook_url: WebhookUrl) -> (Enqueue, Delivery) {
+pub(crate) fn delivery_channel(webhook_url: WebhookUrl) -> (Enqueue, Delivery) {
     delivery_channel_with(
         webhook_url,
         Arc::new(ReqwestAdapter(reqwest::Client::new())),
@@ -307,7 +305,22 @@ async fn deliver_one(
 ) -> Result<(), DeliveryFailure> {
     let started = Instant::now();
     for attempt in 1..=settings.max_attempts {
-        let outcome = adapter.send(webhook_url, body).await;
+        let remaining = settings.budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Err(DeliveryFailure {
+                attempts: attempt.saturating_sub(1),
+                reason: DeliveryFailureReason::RetryBudgetExceeded,
+            });
+        }
+        let outcome = match tokio::time::timeout(remaining, adapter.send(webhook_url, body)).await {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                return Err(DeliveryFailure {
+                    attempts: attempt,
+                    reason: DeliveryFailureReason::RetryBudgetExceeded,
+                })
+            }
+        };
         if matches!(&outcome, SendOutcome::Response { status, .. } if status.is_success()) {
             return Ok(());
         }
@@ -327,7 +340,7 @@ async fn deliver_one(
             } => delay,
             _ => exponential_backoff(attempt, settings.jitter),
         };
-        if started.elapsed().saturating_add(delay) > settings.budget {
+        if started.elapsed().saturating_add(delay) >= settings.budget {
             return Err(DeliveryFailure {
                 attempts: attempt,
                 reason: DeliveryFailureReason::RetryBudgetExceeded,
@@ -379,7 +392,9 @@ mod tests {
 
     struct ScriptedAdapter {
         outcomes: Mutex<VecDeque<SendOutcome>>,
+        delays: Mutex<VecDeque<Duration>>,
         bodies: Mutex<Vec<String>>,
+        instants: Mutex<Vec<Instant>>,
         calls: AtomicUsize,
     }
 
@@ -387,9 +402,16 @@ mod tests {
         fn new(outcomes: impl IntoIterator<Item = SendOutcome>) -> Self {
             Self {
                 outcomes: Mutex::new(outcomes.into_iter().collect()),
+                delays: Mutex::new(VecDeque::new()),
                 bodies: Mutex::new(Vec::new()),
+                instants: Mutex::new(Vec::new()),
                 calls: AtomicUsize::new(0),
             }
+        }
+
+        fn with_delays(self, delays: impl IntoIterator<Item = Duration>) -> Self {
+            *self.delays.lock().unwrap() = delays.into_iter().collect();
+            self
         }
     }
 
@@ -397,7 +419,10 @@ mod tests {
         fn send<'a>(&'a self, _webhook_url: &'a Url, body: &'a str) -> SendFuture<'a> {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
+                self.instants.lock().unwrap().push(Instant::now());
                 self.bodies.lock().unwrap().push(body.to_owned());
+                let delay = self.delays.lock().unwrap().pop_front().unwrap_or_default();
+                tokio::time::sleep(delay).await;
                 self.outcomes
                     .lock()
                     .unwrap()
@@ -483,6 +508,11 @@ mod tests {
             *adapter.bodies.lock().unwrap(),
             ["first", "first", "first", "first", "second"]
         );
+        let instants = adapter.instants.lock().unwrap();
+        assert_eq!(instants[1].duration_since(instants[0]), Duration::from_millis(100));
+        assert_eq!(instants[2].duration_since(instants[1]), Duration::from_millis(200));
+        assert_eq!(instants[3].duration_since(instants[2]), Duration::from_millis(400));
+        assert_eq!(instants[4].duration_since(instants[3]), Duration::ZERO);
     }
 
     #[tokio::test(start_paused = true)]
@@ -517,6 +547,28 @@ mod tests {
         let report = handle.shutdown().await.unwrap();
 
         assert_eq!(report.retries(), 0);
+        assert_eq!(
+            report.failures()[0].reason(),
+            &DeliveryFailureReason::RetryBudgetExceeded
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_http_attempt_cannot_exceed_the_delivery_budget() {
+        let adapter = Arc::new(
+            ScriptedAdapter::new([response(StatusCode::NO_CONTENT)])
+                .with_delays([DELIVERY_BUDGET + Duration::from_secs(1)]),
+        );
+        let (enqueue, delivery) = test_delivery(adapter, DELIVERY_BUDGET);
+        let handle = delivery.spawn().unwrap();
+        enqueue.send("message".into()).unwrap();
+
+        let report = handle.shutdown().await.unwrap();
+
+        assert_eq!(report.accepted(), 1);
+        assert_eq!(report.delivered(), 0);
+        assert_eq!(report.retries(), 0);
+        assert_eq!(report.failures()[0].attempts(), 1);
         assert_eq!(
             report.failures()[0].reason(),
             &DeliveryFailureReason::RetryBudgetExceeded

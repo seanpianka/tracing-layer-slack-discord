@@ -1,6 +1,6 @@
 # tracing-layer-discord
 
-`tracing-layer-discord` converts filtered tracing events into Discord webhook messages. Rich embeds are the default; text presentation is selected at runtime.
+`tracing-layer-discord` converts filtered tracing events into Discord Platform Messages. Rich embeds are the default; text presentation is selected at runtime.
 
 ```rust
 use tracing_layer_discord::{DiscordLayer, DiscordPresentation, MentionTarget};

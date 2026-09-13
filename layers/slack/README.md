@@ -1,6 +1,6 @@
 # tracing-layer-slack
 
-`tracing-layer-slack` converts filtered tracing events into Slack webhook messages. Rich Block Kit presentation is the default; text presentation is selected at runtime.
+`tracing-layer-slack` converts filtered tracing events into Slack Platform Messages. Rich Block Kit presentation is the default; text presentation is selected at runtime.
 
 ```rust
 use tracing_layer_slack::{SlackLayer, SlackPresentation};

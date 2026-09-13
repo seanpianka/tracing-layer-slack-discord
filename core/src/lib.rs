@@ -12,6 +12,59 @@ pub use worker::{Delivery, DeliveryFailure, DeliveryFailureReason, DeliveryHandl
 
 #[doc(hidden)]
 pub mod private {
-    pub use crate::layer::{prepare_event, PreparationConfig};
-    pub use crate::worker::{delivery_channel, Enqueue};
+    use regex::Regex;
+    use tracing::level_filters::LevelFilter;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::layer::Context;
+
+    use crate::layer::{prepare_event, PreparationConfig};
+    use crate::worker::{delivery_channel, Enqueue};
+    use crate::{Delivery, Error, EventFilters, PreparedNotification, WebhookUrl};
+
+    /// Opaque support used only by the platform crates.
+    pub struct PlatformSupport {
+        app_name: String,
+        preparation: PreparationConfig,
+        enqueue: Enqueue,
+    }
+
+    impl PlatformSupport {
+        #[allow(clippy::too_many_arguments)]
+        pub fn new(
+            app_name: String,
+            target_filters: EventFilters,
+            message_filters: Option<EventFilters>,
+            event_by_field_filters: Option<EventFilters>,
+            field_exclusion_filters: Option<Vec<Regex>>,
+            level_filter: Option<LevelFilter>,
+            webhook_url: WebhookUrl,
+        ) -> (Self, Delivery) {
+            let (enqueue, delivery) = delivery_channel(webhook_url);
+            (
+                Self {
+                    app_name,
+                    preparation: PreparationConfig::new(
+                        target_filters,
+                        message_filters,
+                        event_by_field_filters,
+                        field_exclusion_filters,
+                        level_filter,
+                    ),
+                    enqueue,
+                },
+                delivery,
+            )
+        }
+
+        pub fn prepare<S>(&self, event: &Event<'_>, ctx: Context<'_, S>) -> Option<PreparedNotification>
+        where
+            S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
+        {
+            prepare_event(&self.app_name, &self.preparation, event, ctx)
+        }
+
+        pub fn enqueue(&self, body: String) -> Result<(), Error> {
+            self.enqueue.send(body)
+        }
+    }
 }

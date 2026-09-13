@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use tracing::{Event, Level, Subscriber};
-use tracing_layer_core::private::{delivery_channel, prepare_event, Enqueue, PreparationConfig};
+use tracing_layer_core::private::PlatformSupport;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
 
+pub use tracing::level_filters::LevelFilter;
 pub use tracing_layer_core::{
     Delivery, DeliveryFailure, DeliveryFailureReason, DeliveryHandle, DeliveryReport, Error, EventFilters,
     PreparedNotification, WebhookUrl,
@@ -15,10 +16,8 @@ pub use tracing_layer_core::{
 
 /// A layer that turns selected Trace Events into Slack messages.
 pub struct SlackLayer {
-    app_name: String,
-    preparation: PreparationConfig,
+    support: PlatformSupport,
     rendering: SlackRendering,
-    enqueue: Enqueue,
 }
 
 impl SlackLayer {
@@ -46,7 +45,7 @@ where
     S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        let Some(notification) = prepare_event(&self.app_name, &self.preparation, event, ctx) else {
+        let Some(notification) = self.support.prepare(event, ctx) else {
             return;
         };
         let message = match self.rendering.render(&notification) {
@@ -65,7 +64,7 @@ where
                 return;
             }
         };
-        if let Err(_error) = self.enqueue.send(body) {
+        if let Err(_error) = self.support.enqueue(body) {
             #[cfg(feature = "log-errors")]
             eprintln!("ERROR: failed to enqueue Slack notification: {_error}");
         }
@@ -79,7 +78,7 @@ pub struct SlackLayerBuilder {
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<regex::Regex>>,
-    level_filter: Option<String>,
+    level_filter: Option<LevelFilter>,
     webhook_url: WebhookUrl,
     rendering: SlackRendering,
 }
@@ -113,8 +112,8 @@ impl SlackLayerBuilder {
         self
     }
 
-    pub fn level_filter(mut self, level_filter: impl Into<String>) -> Self {
-        self.level_filter = Some(level_filter.into());
+    pub fn level_filter(mut self, level_filter: LevelFilter) -> Self {
+        self.level_filter = Some(level_filter);
         self
     }
 
@@ -129,20 +128,19 @@ impl SlackLayerBuilder {
     }
 
     pub fn build(self) -> (SlackLayer, Delivery) {
-        let (enqueue, delivery) = delivery_channel(self.webhook_url);
-        let preparation = PreparationConfig::new(
+        let (support, delivery) = PlatformSupport::new(
+            self.app_name,
             self.target_filters,
             self.message_filters,
             self.event_by_field_filters,
             self.field_exclusion_filters,
             self.level_filter,
+            self.webhook_url,
         );
         (
             SlackLayer {
-                app_name: self.app_name,
-                preparation,
+                support,
                 rendering: self.rendering,
-                enqueue,
             },
             delivery,
         )
@@ -156,7 +154,7 @@ pub enum SlackPresentation {
     Text,
 }
 
-/// A validated Slack webhook message without a destination.
+/// A validated Slack Platform Message without a destination.
 #[derive(Clone, Debug)]
 pub struct SlackMessage(Value);
 
@@ -264,18 +262,32 @@ fn validate_message(value: &Value) -> Result<(), Error> {
     let object = value
         .as_object()
         .ok_or(Error::InvalidPlatformMessage("Slack message must be an object"))?;
-    if let Some(text) = object.get("text") {
-        if !text.is_string() {
-            return Err(Error::InvalidPlatformMessage("Slack text must be a string"));
+    let has_text = if let Some(text) = object.get("text") {
+        let text = text
+            .as_str()
+            .ok_or(Error::InvalidPlatformMessage("Slack text must be a string"))?;
+        !text.is_empty()
+    } else {
+        false
+    };
+    let has_blocks = if let Some(blocks) = object.get("blocks") {
+        let blocks = blocks
+            .as_array()
+            .ok_or(Error::InvalidPlatformMessage("Slack blocks must be an array"))?;
+        if blocks.len() > 50 {
+            return Err(Error::InvalidPlatformMessage("Slack message exceeds 50 blocks"));
         }
-    }
-    if let Some(blocks) = object.get("blocks") {
-        if !blocks.is_array() {
-            return Err(Error::InvalidPlatformMessage("Slack blocks must be an array"));
+        if blocks.iter().any(|block| !block.is_object()) {
+            return Err(Error::InvalidPlatformMessage("Slack blocks must be objects"));
         }
-    }
-    if !object.contains_key("text") && !object.contains_key("blocks") {
-        return Err(Error::InvalidPlatformMessage("Slack message has no text or blocks"));
+        !blocks.is_empty()
+    } else {
+        false
+    };
+    if !has_text && !has_blocks {
+        return Err(Error::InvalidPlatformMessage(
+            "Slack message has no non-empty text or blocks",
+        ));
     }
     Ok(())
 }
@@ -396,6 +408,9 @@ mod tests {
         assert!(SlackMessage::from_value(json!([])).is_err());
         assert!(SlackMessage::from_value(json!({ "text": 42 })).is_err());
         assert!(SlackMessage::from_value(json!({ "blocks": "not-an-array" })).is_err());
+        assert!(SlackMessage::from_value(json!({ "text": "" })).is_err());
+        assert!(SlackMessage::from_value(json!({ "blocks": [] })).is_err());
+        assert!(SlackMessage::from_value(json!({ "blocks": [42] })).is_err());
     }
 
     #[test]

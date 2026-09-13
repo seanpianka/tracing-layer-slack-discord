@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use tracing::{Event, Level, Subscriber};
-use tracing_layer_core::private::{delivery_channel, prepare_event, Enqueue, PreparationConfig};
+use tracing_layer_core::private::PlatformSupport;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
 
+pub use tracing::level_filters::LevelFilter;
 pub use tracing_layer_core::{
     Delivery, DeliveryFailure, DeliveryFailureReason, DeliveryHandle, DeliveryReport, Error, EventFilters,
     PreparedNotification, WebhookUrl,
@@ -16,11 +17,9 @@ pub use tracing_layer_core::{
 
 /// A layer that turns selected Trace Events into Discord messages.
 pub struct DiscordLayer {
-    app_name: String,
-    preparation: PreparationConfig,
+    support: PlatformSupport,
     rendering: DiscordRendering,
     mention_target: Option<MentionTarget>,
-    enqueue: Enqueue,
 }
 
 impl DiscordLayer {
@@ -48,7 +47,7 @@ where
     S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        let Some(notification) = prepare_event(&self.app_name, &self.preparation, event, ctx) else {
+        let Some(notification) = self.support.prepare(event, ctx) else {
             return;
         };
         let message = match self.rendering.render(&notification) {
@@ -67,7 +66,7 @@ where
                 return;
             }
         };
-        if let Err(_error) = self.enqueue.send(body) {
+        if let Err(_error) = self.support.enqueue(body) {
             #[cfg(feature = "log-errors")]
             eprintln!("ERROR: failed to enqueue Discord notification: {_error}");
         }
@@ -81,7 +80,7 @@ pub struct DiscordLayerBuilder {
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<regex::Regex>>,
-    level_filter: Option<String>,
+    level_filter: Option<LevelFilter>,
     webhook_url: WebhookUrl,
     rendering: DiscordRendering,
     mention_target: Option<MentionTarget>,
@@ -117,8 +116,8 @@ impl DiscordLayerBuilder {
         self
     }
 
-    pub fn level_filter(mut self, level_filter: impl Into<String>) -> Self {
-        self.level_filter = Some(level_filter.into());
+    pub fn level_filter(mut self, level_filter: LevelFilter) -> Self {
+        self.level_filter = Some(level_filter);
         self
     }
 
@@ -138,21 +137,20 @@ impl DiscordLayerBuilder {
     }
 
     pub fn build(self) -> (DiscordLayer, Delivery) {
-        let (enqueue, delivery) = delivery_channel(self.webhook_url);
-        let preparation = PreparationConfig::new(
+        let (support, delivery) = PlatformSupport::new(
+            self.app_name,
             self.target_filters,
             self.message_filters,
             self.event_by_field_filters,
             self.field_exclusion_filters,
             self.level_filter,
+            self.webhook_url,
         );
         (
             DiscordLayer {
-                app_name: self.app_name,
-                preparation,
+                support,
                 rendering: self.rendering,
                 mention_target: self.mention_target,
-                enqueue,
             },
             delivery,
         )
@@ -202,7 +200,7 @@ impl FromStr for DiscordRoleId {
     }
 }
 
-/// A validated Discord webhook message without a destination.
+/// A validated Discord Platform Message without a destination.
 #[derive(Clone, Debug)]
 pub struct DiscordMessage(Value);
 
@@ -357,22 +355,34 @@ fn validate_message(value: &Value) -> Result<(), Error> {
     let object = value
         .as_object()
         .ok_or(Error::InvalidPlatformMessage("Discord message must be an object"))?;
-    if let Some(content) = object.get("content") {
+    let has_content = if let Some(content) = object.get("content") {
         let content = content
             .as_str()
             .ok_or(Error::InvalidPlatformMessage("Discord content must be a string"))?;
         if content.chars().count() > 2_000 {
             return Err(Error::InvalidPlatformMessage("Discord content exceeds 2000 characters"));
         }
-    }
-    if let Some(embeds) = object.get("embeds") {
-        if !embeds.is_array() {
-            return Err(Error::InvalidPlatformMessage("Discord embeds must be an array"));
+        !content.is_empty()
+    } else {
+        false
+    };
+    let has_embeds = if let Some(embeds) = object.get("embeds") {
+        let embeds = embeds
+            .as_array()
+            .ok_or(Error::InvalidPlatformMessage("Discord embeds must be an array"))?;
+        if embeds.len() > 10 {
+            return Err(Error::InvalidPlatformMessage("Discord message exceeds 10 embeds"));
         }
-    }
-    if !object.contains_key("content") && !object.contains_key("embeds") {
+        if embeds.iter().any(|embed| !embed.is_object()) {
+            return Err(Error::InvalidPlatformMessage("Discord embeds must be objects"));
+        }
+        !embeds.is_empty()
+    } else {
+        false
+    };
+    if !has_content && !has_embeds {
         return Err(Error::InvalidPlatformMessage(
-            "Discord message has no content or embeds",
+            "Discord message has no non-empty content or embeds",
         ));
     }
     Ok(())
@@ -589,7 +599,7 @@ mod tests {
             .message_filters(message_filters)
             .event_by_field_filters(event_fields)
             .field_exclusion_filters(vec![Regex::new("^secret$").unwrap()])
-            .level_filter("info")
+            .level_filter(LevelFilter::INFO)
             .renderer(RecordingRenderer(recorded.clone()))
             .build();
         let subscriber = tracing_subscriber::registry().with(layer);
@@ -681,6 +691,9 @@ mod tests {
         assert!("not-a-role".parse::<DiscordRoleId>().is_err());
         assert!(DiscordMessage::from_value(json!([])).is_err());
         assert!(DiscordMessage::from_value(json!({ "content": 42 })).is_err());
+        assert!(DiscordMessage::from_value(json!({ "content": "" })).is_err());
+        assert!(DiscordMessage::from_value(json!({ "embeds": [] })).is_err());
+        assert!(DiscordMessage::from_value(json!({ "embeds": [42] })).is_err());
     }
 
     #[test]

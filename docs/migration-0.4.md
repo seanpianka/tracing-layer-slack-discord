@@ -16,6 +16,8 @@ The queue is unbounded and FIFO. Delivery is best-effort and at-least-once, so r
 
 Discord embeds and Slack blocks remain the defaults. Choose text with `DiscordPresentation::Text` or `SlackPresentation::Text`. The former `embed` and `blocks` Cargo features no longer exist.
 
+Level filtering now takes the typed `LevelFilter` re-exported by either platform crate, for example `.level_filter(LevelFilter::INFO)`.
+
 ## Move customization to the platform
 
 Implement `DiscordRenderer` or `SlackRenderer` instead of a core message factory. Each renderer receives a borrowed `PreparedNotification` and returns its platform's validated message type. A Platform Message contains no webhook destination.

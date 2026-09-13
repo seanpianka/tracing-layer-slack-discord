@@ -1,8 +1,6 @@
-use std::str::FromStr;
-
 use regex::Regex;
 use serde_json::{Map, Value};
-use tracing::log::LevelFilter;
+use tracing::level_filters::LevelFilter;
 use tracing::{Event, Level, Subscriber};
 use tracing_bunyan_formatter::JsonStorage;
 use tracing_subscriber::layer::Context;
@@ -57,23 +55,22 @@ impl PreparedNotification {
     }
 }
 
-#[doc(hidden)]
 #[derive(Clone, Debug)]
-pub struct PreparationConfig {
+pub(crate) struct PreparationConfig {
     target_filters: EventFilters,
     message_filters: Option<EventFilters>,
     event_by_field_filters: Option<EventFilters>,
     field_exclusion_filters: Option<Vec<Regex>>,
-    level_filter: Option<String>,
+    level_filter: Option<LevelFilter>,
 }
 
 impl PreparationConfig {
-    pub fn new(
+    pub(crate) fn new(
         target_filters: EventFilters,
         message_filters: Option<EventFilters>,
         event_by_field_filters: Option<EventFilters>,
         field_exclusion_filters: Option<Vec<Regex>>,
-        level_filter: Option<String>,
+        level_filter: Option<LevelFilter>,
     ) -> Self {
         Self {
             target_filters,
@@ -85,8 +82,7 @@ impl PreparationConfig {
     }
 }
 
-#[doc(hidden)]
-pub fn prepare_event<S>(
+pub(crate) fn prepare_event<S>(
     app_name: &str,
     config: &PreparationConfig,
     event: &Event<'_>,
@@ -112,9 +108,7 @@ where
     config.message_filters.process(message).ok()?;
 
     if let Some(level_filter) = &config.level_filter {
-        let message_level = LevelFilter::from_str(event.metadata().level().as_str()).ok()?;
-        let threshold = LevelFilter::from_str(level_filter).ok()?;
-        if message_level > threshold {
+        if *event.metadata().level() > *level_filter {
             return None;
         }
     }
