@@ -40,6 +40,8 @@ jobs:
         run: cargo doc --workspace --all-features --no-deps
       - name: Run tests
         run: cargo test --workspace --all-features
+      - name: Check README examples
+        run: cargo test --workspace --all-features --doc
       - name: Check supported feature combinations
         shell: bash
         run: |

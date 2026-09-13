@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Core 0.4.1, Discord 0.4.1, and Slack 0.9.1 - 2026-09-13
+
+### Fixed
+
+- README examples are complete Rust programs instead of Rustdoc-only fragments.
+- CI compiles platform README examples and rejects hidden lines that GitHub would display as invalid Rust.
+
 ## Core 0.4.0, Discord 0.4.0, and Slack 0.9.0 - 2026-09-13
 
 ### Added

@@ -2,16 +2,16 @@
 
 `tracing-layer-discord` converts filtered tracing events into Discord Platform Messages. Rich embeds are the default; text presentation is selected at runtime.
 
-```rust
+```rust,no_run
 use tracing_layer_discord::{DiscordLayer, DiscordPresentation, MentionTarget};
 
-# fn build() -> Result<(), tracing_layer_discord::Error> {
-let (layer, delivery) = DiscordLayer::from_env("api", Default::default())?
-    .presentation(DiscordPresentation::Rich)
-    .mention_target(MentionTarget::Here)
-    .build();
-# Ok(())
-# }
+fn main() -> Result<(), tracing_layer_discord::Error> {
+    let (_layer, _delivery) = DiscordLayer::from_env("api", Default::default())?
+        .presentation(DiscordPresentation::Rich)
+        .mention_target(MentionTarget::Here)
+        .build();
+    Ok(())
+}
 ```
 
 Building does not require a Tokio runtime. Call `delivery.spawn()` after entering a runtime, then consume the returned handle with `shutdown().await` to drain accepted messages and receive a `DeliveryReport`.
