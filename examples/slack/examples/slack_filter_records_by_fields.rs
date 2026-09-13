@@ -18,12 +18,13 @@ pub async fn handler() {
 async fn main() {
     let targets_to_filter: EventFilters = Regex::new("filter_records_by_fields").unwrap().into();
     let event_fields_to_filter: EventFilters = Regex::new("password").unwrap().into();
-    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), targets_to_filter)
+    let (slack_layer, delivery) = SlackLayer::from_env("test-app", targets_to_filter)
+        .expect("valid Slack webhook configuration")
         .event_by_field_filters(event_fields_to_filter)
         .build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    background_worker.start().await;
+    let delivery = delivery.spawn().expect("active Tokio runtime");
     handler().await;
-    background_worker.shutdown().await;
+    delivery.shutdown().await.expect("Slack delivery shutdown");
 }

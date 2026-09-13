@@ -30,13 +30,15 @@ pub async fn controller() {
 #[tokio::main]
 async fn main() {
     let formatting_layer = tracing_bunyan_formatter::BunyanFormattingLayer::new("tracing_demo".into(), std::io::stdout);
-    let (discord_layer, background_worker) = DiscordLayer::builder("test-app".to_string(), Default::default()).build();
+    let (discord_layer, delivery) = DiscordLayer::from_env("test-app", Default::default())
+        .expect("valid Discord webhook configuration")
+        .build();
     let subscriber = Registry::default()
         .with(discord_layer)
         .with(tracing_bunyan_formatter::JsonStorageLayer)
         .with(formatting_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    background_worker.start().await;
+    let delivery = delivery.spawn().expect("active Tokio runtime");
     controller().await;
-    background_worker.shutdown().await;
+    delivery.shutdown().await.expect("Discord delivery shutdown");
 }

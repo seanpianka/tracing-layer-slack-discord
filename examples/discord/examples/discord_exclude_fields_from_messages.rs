@@ -2,7 +2,7 @@ use regex::Regex;
 use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-use tracing_layer_discord::{EventFilters, DiscordLayer};
+use tracing_layer_discord::{DiscordLayer, EventFilters};
 
 #[instrument]
 pub async fn handler() {
@@ -22,12 +22,13 @@ async fn main() {
         Regex::new(".*password.*").unwrap(),
         Regex::new("command").unwrap(),
     ];
-    let (discord_layer, background_worker) = DiscordLayer::builder("test-app".to_string(), targets_to_filter)
+    let (discord_layer, delivery) = DiscordLayer::from_env("test-app", targets_to_filter)
+        .expect("valid Discord webhook configuration")
         .field_exclusion_filters(fields_to_exclude)
         .build();
     let subscriber = Registry::default().with(discord_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    background_worker.start().await;
+    let delivery = delivery.spawn().expect("active Tokio runtime");
     handler().await;
-    background_worker.shutdown().await;
+    delivery.shutdown().await.expect("Discord delivery shutdown");
 }
