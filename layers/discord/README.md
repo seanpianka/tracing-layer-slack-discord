@@ -1,5 +1,8 @@
 # tracing-layer-discord
 
+[![tracing-layer-discord documentation](https://docs.rs/tracing-layer-discord/badge.svg)](https://docs.rs/tracing-layer-discord)
+[![tracing-layer-discord on crates.io](https://img.shields.io/crates/v/tracing-layer-discord.svg)](https://crates.io/crates/tracing-layer-discord)
+
 `tracing-layer-discord` converts filtered tracing events into Discord Platform Messages. Rich embeds are the default; text presentation is selected at runtime.
 
 ```rust,no_run
