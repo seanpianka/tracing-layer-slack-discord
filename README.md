@@ -10,46 +10,48 @@ Tracing subscriber layers that prepare filtered events and deliver them to Slack
 
 ## Discord
 
-```rust
+```rust,no_run
 use tracing_layer_discord::{DiscordLayer, MentionTarget};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let (layer, delivery) = DiscordLayer::from_env("api", Default::default())?
-    .mention_target(MentionTarget::Everyone)
-    .build();
-let delivery = delivery.spawn()?;
-let subscriber = Registry::default().with(layer);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (layer, delivery) = DiscordLayer::from_env("api", Default::default())?
+        .mention_target(MentionTarget::Everyone)
+        .build();
+    let delivery = delivery.spawn()?;
+    let subscriber = Registry::default().with(layer);
 
-tracing::subscriber::with_default(subscriber, || {
-    tracing::error!(request_id = 42, "request failed");
-});
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::error!(request_id = 42, "request failed");
+    });
 
-let report = delivery.shutdown().await?;
-assert_eq!(report.accepted(), report.delivered() + report.failures().len());
-# Ok(())
-# }
+    let report = delivery.shutdown().await?;
+    assert_eq!(report.accepted(), report.delivered() + report.failures().len());
+    Ok(())
+}
 ```
 
 Discord mentions are disabled by default. A configured `MentionTarget` applies only to `ERROR` events and produces both the visible mention token and a matching `allowed_mentions` restriction. Discord permissions and role mentionability still determine whether members are notified.
 
 ## Slack
 
-```rust
+```rust,no_run
 use tracing_layer_slack::{SlackLayer, SlackPresentation};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-# async fn run() -> Result<(), Box<dyn std::error::Error>> {
-let (layer, delivery) = SlackLayer::from_env("api", Default::default())?
-    .presentation(SlackPresentation::Text)
-    .build();
-let delivery = delivery.spawn()?;
-let subscriber = Registry::default().with(layer);
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (layer, delivery) = SlackLayer::from_env("api", Default::default())?
+        .presentation(SlackPresentation::Text)
+        .build();
+    let delivery = delivery.spawn()?;
+    let subscriber = Registry::default().with(layer);
 
-tracing::subscriber::with_default(subscriber, || tracing::warn!("request retried"));
-let report = delivery.shutdown().await?;
-# Ok(())
-# }
+    tracing::subscriber::with_default(subscriber, || tracing::warn!("request retried"));
+    let _report = delivery.shutdown().await?;
+    Ok(())
+}
 ```
 
 Rich presentation is the runtime default for both platforms. `from_env` reads `DISCORD_WEBHOOK_URL` or `SLACK_WEBHOOK_URL`; `builder` accepts an explicit URL. Both validate the destination before delivery starts and redact it from diagnostics.
