@@ -25,10 +25,12 @@ async fn main() {
     // Only show events from where this example code is the target.
     let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
 
-    let (slack_layer, background_worker) = SlackLayer::builder("test-app".to_string(), target_to_filter).build();
+    let (slack_layer, delivery) = SlackLayer::from_env("test-app", target_to_filter)
+        .expect("valid Slack webhook configuration")
+        .build();
     let subscriber = Registry::default().with(slack_layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    background_worker.start().await;
+    let delivery = delivery.spawn().expect("active Tokio runtime");
     controller().await;
-    background_worker.shutdown().await;
+    delivery.shutdown().await.expect("Slack delivery shutdown");
 }

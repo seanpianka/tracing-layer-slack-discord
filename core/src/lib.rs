@@ -1,58 +1,70 @@
-use std::fmt::Debug;
+//! Filters Trace Events into platform-neutral notifications and delivers rendered messages.
 
-use serde_json::Value;
-use tracing::Level;
-
-pub use filters::EventFilters;
-pub use worker::BackgroundWorker;
-pub use worker::WorkerMessage;
-
-// mod aws_lambda;
+mod error;
 pub mod filters;
-pub mod layer;
+mod layer;
 mod worker;
 
-pub type ChannelSender = tokio::sync::mpsc::UnboundedSender<WorkerMessage>;
-pub type ChannelReceiver = tokio::sync::mpsc::UnboundedReceiver<WorkerMessage>;
+pub use error::Error;
+pub use filters::EventFilters;
+pub use layer::PreparedNotification;
+pub use worker::{Delivery, DeliveryFailure, DeliveryFailureReason, DeliveryHandle, DeliveryReport, WebhookUrl};
 
-/// Send a message to a webhook endpoint.
-pub trait WebhookMessage: Debug + Send + Sync {
-    fn webhook_url(&self) -> &str;
-    fn serialize(&self) -> String;
+#[doc(hidden)]
+pub mod private {
+    use regex::Regex;
+    use tracing::level_filters::LevelFilter;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::layer::Context;
+
+    use crate::layer::{prepare_event, PreparationConfig};
+    use crate::worker::{delivery_channel, Enqueue};
+    use crate::{Delivery, Error, EventFilters, PreparedNotification, WebhookUrl};
+
+    /// Keeps event preparation and delivery wiring out of the platform crates.
+    pub struct PlatformSupport {
+        app_name: String,
+        preparation: PreparationConfig,
+        enqueue: Enqueue,
+    }
+
+    impl PlatformSupport {
+        #[allow(clippy::too_many_arguments)]
+        pub fn new(
+            app_name: String,
+            target_filters: EventFilters,
+            message_filters: Option<EventFilters>,
+            event_by_field_filters: Option<EventFilters>,
+            field_exclusion_filters: Option<Vec<Regex>>,
+            level_filter: Option<LevelFilter>,
+            webhook_url: WebhookUrl,
+        ) -> (Self, Delivery) {
+            let (enqueue, delivery) = delivery_channel(webhook_url);
+            (
+                Self {
+                    app_name,
+                    preparation: PreparationConfig::new(
+                        target_filters,
+                        message_filters,
+                        event_by_field_filters,
+                        field_exclusion_filters,
+                        level_filter,
+                    ),
+                    enqueue,
+                },
+                delivery,
+            )
+        }
+
+        pub fn prepare<S>(&self, event: &Event<'_>, ctx: Context<'_, S>) -> Option<PreparedNotification>
+        where
+            S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
+        {
+            prepare_event(&self.app_name, &self.preparation, event, ctx)
+        }
+
+        pub fn enqueue(&self, body: String) -> Result<(), Error> {
+            self.enqueue.send(body)
+        }
+    }
 }
-
-pub trait WebhookMessageFactory {
-    fn create(inputs: WebhookMessageInputs) -> impl WebhookMessage;
-}
-
-/// The data expected to be available for message producers.
-pub struct WebhookMessageInputs {
-    pub app_name: String,
-    pub message: String,
-    pub target: String,
-    pub span: String,
-    pub metadata: String,
-    pub webhook_url: String,
-    pub source_line: u32,
-    pub source_file: String,
-    pub event_level: Level,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub enum WebhookMessageSpec {
-    TextNoEmbed(String),
-    TextWithEmbed(String, Vec<Value>),
-    EmbedNoText(Vec<Value>),
-}
-
-pub trait Config {
-    fn webhook_url(&self) -> &str;
-
-    fn new_from_env() -> Self
-    where
-        Self: Sized;
-}
-
-#[cfg(test)]
-mod tests {}

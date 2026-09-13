@@ -1,11 +1,11 @@
 [package]
 name = "tracing-layer-core"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2018"
 license = "Apache-2.0"
 description = "Send filtered tracing events to a webhook endpoint"
 documentation = "https://docs.rs/tracing-layer-core"
-repository = "https://github.com/seanpianka/tracing-layer-core/"
+repository = "https://github.com/seanpianka/tracing-layer-slack-discord/"
 readme = "../README.md"
 keywords = ["tracing", "layer", "webhook", "async", "filter"]
 categories = ["development-tools::debugging", "asynchronous"]
@@ -20,15 +20,9 @@ default = ["rustls", "gzip", "log-errors"]
 gzip = ["reqwest/gzip"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
-aws-lambda = ["aws-config", "aws-sdk-lambda", "lambda-extension"]
 log-errors = []
 
 [dependencies]
-aws-config = { version = "1.1", optional = true }
-aws-sdk-lambda = { version = "1.20", optional = true }
-lambda-extension = { version = "0.10", optional = true }
-
-debug_print = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
   "http2",

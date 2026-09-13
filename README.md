@@ -1,85 +1,65 @@
 # tracing-layer-slack-discord
 
-This repository contains [`Layer`] implementations for sending [`tracing`] events to Slack and Discord.
+Tracing subscriber layers that prepare filtered events and deliver them to Slack or Discord webhooks without performing network I/O in `Layer::on_event`.
 
-- [![tracing-layer-slack](https://img.shields.io/badge/tracing--layer--slack-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/slack)
-  - [![tracing-layer-slack on crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg)](https://crates.io/crates/tracing-layer-slack)[![Docs](https://docs.rs/tracing-layer-discord/badge.svg)](https://docs.rs/tracing-layer-discord)![Crates.io](https://img.shields.io/crates/d/tracing-layer-slack)
-- [![tracing-layer-discord](https://img.shields.io/badge/tracing--layer--discord-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/discord)
-  - [![tracing-layer-discord on crates.io](https://img.shields.io/crates/v/tracing-layer-discord.svg)](https://crates.io/crates/tracing-layer-discord)[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)![Crates.io](https://img.shields.io/crates/d/tracing-layer-discord)
-- [![tracing-layer-core](https://img.shields.io/badge/tracing--layer--core-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main)
-  - [![tracing-layer-core on crates.io](https://img.shields.io/crates/v/tracing-layer-core.svg)](https://crates.io/crates/tracing-layer-core)[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)![Crates.io](https://img.shields.io/crates/d/tracing-layer-core)
+## Packages
 
-## Synopsis
+- [`tracing-layer-discord`](layers/discord): Discord embeds, text messages, custom renderers, and opt-in error mentions.
+- [`tracing-layer-slack`](layers/slack): Slack Block Kit, text messages, custom renderers, and escaped trace-controlled mentions.
+- [`tracing-layer-core`](core): shared Prepared Notification and Webhook Delivery behavior.
 
-[`DiscordLayer`] and [`SlackLayer`] send POST requests via [`tokio`] and [`reqwest`] to a [Discord Webhook URL](https://api.discord.com/messaging/webhooks) and [Slack Webhook URL](https://api.slack.com/messaging/webhooks) for each new tracing event, depending on the user-supplied event filtering rules. The format of the embedded message is statically defined.
-
-This layer also looks for an optional [`JsonStorageLayer`] [`extension`](https://docs.rs/tracing-subscriber/0.2.5/tracing_subscriber/registry/struct.ExtensionsMut.html) on the parent [`span`] of each event. This extension may contain additional contextual information for the parent span of an event, which is included into the Discord message.
-
-## Features
-
-- Send trace logs to Slack and Discord channels.
-- Configurable to suit your needs.
-- Easy to integrate with existing Rust applications.
-
-## Usage
-
-Add the following to your `Cargo.toml`:
-
-```toml
-[dependencies]
-tracing-layer-slack = "0"
-tracing-layer-discord = "0"
-```
-
-Then, in your application:
+## Discord
 
 ```rust
-use regex::Regex;
-use tracing::{info, instrument, warn};
+use tracing_layer_discord::{DiscordLayer, MentionTarget};
 use tracing_subscriber::{layer::SubscriberExt, Registry};
 
-use tracing_layer_slack::{EventFilters, SlackLayer};
-use tracing_layer_discord::{EventFilters, DiscordLayer};
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let (layer, delivery) = DiscordLayer::from_env("api", Default::default())?
+    .mention_target(MentionTarget::Everyone)
+    .build();
+let delivery = delivery.spawn()?;
+let subscriber = Registry::default().with(layer);
 
-#[instrument]
-pub async fn network_io(id: u64) {
-    warn!(user_id = id, "had to retry the request once");
-}
+tracing::subscriber::with_default(subscriber, || {
+    tracing::error!(request_id = 42, "request failed");
+});
 
-#[tokio::main]
-async fn main() {
-    // Only show events from where this example code is the target.
-    let target_to_filter: EventFilters = Regex::new("simple").unwrap().into();
-
-    let app_name = "test-app".to_string();
-    let (slack_layer, slack_worker) = SlackLayer::builder(app_name.clone(), target_to_filter.clone()).build();
-    let (discord_layer, discord_worker) = DiscordLayer::builder(app_name, target_to_filter).build();
-    let subscriber = Registry::default().with(slack_layer);
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-
-    // Start the workers and spawn the background async tasks on the current executor.
-    discord_worker.start().await;
-    slack_worker.start().await;
-
-    network_io(123).await;
-    
-    // Shutdown the workers and ensure their message cache is flushed.
-    slack_worker.shutdown().await;
-    discord_worker.shutdown().await;
-}
+let report = delivery.shutdown().await?;
+assert_eq!(report.accepted(), report.delivered() + report.failures().len());
+# Ok(())
+# }
 ```
+
+Discord mentions are disabled by default. A configured `MentionTarget` applies only to `ERROR` events and produces both the visible mention token and a matching `allowed_mentions` restriction. Discord permissions and role mentionability still determine whether members are notified.
+
+## Slack
+
+```rust
+use tracing_layer_slack::{SlackLayer, SlackPresentation};
+use tracing_subscriber::{layer::SubscriberExt, Registry};
+
+# async fn run() -> Result<(), Box<dyn std::error::Error>> {
+let (layer, delivery) = SlackLayer::from_env("api", Default::default())?
+    .presentation(SlackPresentation::Text)
+    .build();
+let delivery = delivery.spawn()?;
+let subscriber = Registry::default().with(layer);
+
+tracing::subscriber::with_default(subscriber, || tracing::warn!("request retried"));
+let report = delivery.shutdown().await?;
+# Ok(())
+# }
+```
+
+Rich presentation is the runtime default for both platforms. `from_env` reads `DISCORD_WEBHOOK_URL` or `SLACK_WEBHOOK_URL`; `builder` accepts an explicit URL. Both validate the destination before delivery starts and redact it from diagnostics.
+
+## Delivery guarantees
+
+Webhook Delivery uses an unbounded FIFO queue. It is best-effort and at-least-once: transient or ambiguous failures may result in duplicate notifications. A message is attempted at most five times. Network errors, HTTP 408, HTTP 429, and 5xx responses are retried; other non-2xx responses are terminal. Rate-limit delays are honored within a two-minute per-message budget.
+
+See [the breaking migration guide](docs/migration-0.4.md) when upgrading from the legacy worker and message-factory APIs.
 
 ## License
 
-This project is licensed under the Apache-2.0 License - see the [LICENSE](LICENSE) file for details.
-
-[`Layer`]: https://docs.rs/tracing-subscriber/0.3.0/tracing_subscriber/layer/trait.Layer.html
-[`SlackLayer`]: https://docs.rs/tracing-layer-slack/0.2.2/tracing_layer_slack/struct.SlackLayer.html
-[`DiscordLayer`]: https://docs.rs/tracing-layer-discord/0.2.2/tracing_layer_discord/struct.DiscordLayer.html
-[`Span`]: https://docs.rs/tracing/0.1.13/tracing/struct.Span.html
-[`Subscriber`]: https://docs.rs/tracing-core/0.1.10/tracing_core/subscriber/trait.Subscriber.html
-[`tracing`]: https://docs.rs/tracing
-[`tracing`]: https://docs.rs/tracing-subscriber
-[`reqwest`]: https://docs.rs/reqwest/0.11.4/reqwest/
-[`tokio`]: https://docs.rs/tokio/1.8.1/tokio/
-[`JsonStorageLayer`]: https://docs.rs/tracing-bunyan-formatter/0.3.0/tracing_bunyan_formatter/struct.JsonStorageLayer.html
+Apache-2.0. See [LICENSE](LICENSE).

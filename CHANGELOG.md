@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## Core 0.4.0, Discord 0.4.0, and Slack 0.9.0 - 2026-09-13
+
+### Added
+
+- Platform-first Slack and Discord builders with validated, redacted webhook destinations.
+- Explicit single-use Webhook Delivery startup, draining shutdown, and redacted delivery reports.
+- Runtime rich/text presentation and platform-specific custom renderers over Prepared Notification.
+- Opt-in Discord error mentions for everyone, here, or one validated role.
+
+### Changed
+
+- Webhook delivery now classifies HTTP status codes, honors bounded rate-limit delays, and retries transient failures at most five times while preserving FIFO order.
+- `tracing-layer-core` and `tracing-layer-discord` are prepared for 0.4; `tracing-layer-slack` is prepared for 0.9.
+- Published crate metadata now points to this repository.
+
+### Removed
+
+- The generic core configuration, layer, message-factory, message, worker-command, background-worker, and channel interfaces.
+- The Discord `embed` and Slack `blocks` Cargo features; presentation is now selected at runtime.
+- The unfinished `aws-lambda` feature and its dormant implementation.
+
 ## [0.6.4] - 2024-04-04
 ### Fixed
 - do not unwrap during shutdown
@@ -78,4 +101,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2021-08-02
 ### Added
 - Initial release of the slack layer
-
