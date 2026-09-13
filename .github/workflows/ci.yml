@@ -33,18 +33,18 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Check documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --workspace --all-features --no-deps
+        run: cargo doc --workspace --all-features --no-deps
       - name: Run tests
-        run: cargo test --locked --workspace --all-features
+        run: cargo test --workspace --all-features
       - name: Check supported feature combinations
         shell: bash
         run: |
           for package in tracing-layer-discord tracing-layer-slack; do
-            cargo check --locked -p "$package" --no-default-features
-            cargo check --locked -p "$package" --no-default-features --features rustls,gzip,log-errors
-            cargo check --locked -p "$package" --no-default-features --features native-tls,gzip,log-errors
+            cargo check -p "$package" --no-default-features
+            cargo check -p "$package" --no-default-features --features rustls,gzip,log-errors
+            cargo check -p "$package" --no-default-features --features native-tls,gzip,log-errors
           done

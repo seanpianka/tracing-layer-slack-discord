@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The generic core configuration, layer, message-factory, message, worker-command, background-worker, and channel interfaces.
 - The Discord `embed` and Slack `blocks` Cargo features; presentation is now selected at runtime.
+- The unfinished `aws-lambda` feature and its dormant implementation.
 
 ## [0.6.4] - 2024-04-04
 ### Fixed
