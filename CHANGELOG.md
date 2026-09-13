@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Core 0.4.0, Discord 0.4.0, and Slack 0.9.0 - 2026-09-13
+
 ### Added
 
 - Platform-first Slack and Discord builders with validated, redacted webhook destinations.
