@@ -2,13 +2,12 @@
 
 This repository contains [`Layer`] implementations for sending [`tracing`] events to Slack and Discord.
 
-[![tracing-layer-slack](https://img.shields.io/badge/tracing--layer--slack-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/slack)
-[![tracing-layer-slack on crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg)](https://crates.io/crates/tracing-layer-slack)
-[![Docs](https://docs.rs/tracing-layer-discord/badge.svg)](https://docs.rs/tracing-layer-discord)
-
-[![tracing-layer-discord](https://img.shields.io/badge/tracing--layer--discord-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/discord)
-[![tracing-layer-discord on crates.io](https://img.shields.io/crates/v/tracing-layer-discord.svg)](https://crates.io/crates/tracing-layer-discord)
-[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)
+- [![tracing-layer-slack](https://img.shields.io/badge/tracing--layer--slack-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/slack)
+  - [![tracing-layer-slack on crates.io](https://img.shields.io/crates/v/tracing-layer-slack.svg)](https://crates.io/crates/tracing-layer-slack)[![Docs](https://docs.rs/tracing-layer-discord/badge.svg)](https://docs.rs/tracing-layer-discord)![Crates.io](https://img.shields.io/crates/d/tracing-layer-slack)
+- [![tracing-layer-discord](https://img.shields.io/badge/tracing--layer--discord-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main/layers/discord)
+  - [![tracing-layer-discord on crates.io](https://img.shields.io/crates/v/tracing-layer-discord.svg)](https://crates.io/crates/tracing-layer-discord)[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)![Crates.io](https://img.shields.io/crates/d/tracing-layer-discord)
+- [![tracing-layer-core](https://img.shields.io/badge/tracing--layer--core-blue)](https://github.com/seanpianka/tracing-layer-slack/tree/main)
+  - [![tracing-layer-core on crates.io](https://img.shields.io/crates/v/tracing-layer-core.svg)](https://crates.io/crates/tracing-layer-core)[![Docs](https://docs.rs/tracing-layer-slack/badge.svg)](https://docs.rs/tracing-layer-slack)![Crates.io](https://img.shields.io/crates/d/tracing-layer-core)
 
 ## Synopsis
 
