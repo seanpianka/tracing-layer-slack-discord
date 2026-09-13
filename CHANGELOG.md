@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Webhook delivery now classifies HTTP status codes, honors bounded rate-limit delays, and retries transient failures at most five times while preserving FIFO order.
 - `tracing-layer-core` and `tracing-layer-discord` are prepared for 0.4; `tracing-layer-slack` is prepared for 0.9.
+- Published crate metadata now points to this repository.
 
 ### Removed
 

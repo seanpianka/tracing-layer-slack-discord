@@ -15,7 +15,7 @@ const MAX_ATTEMPTS: usize = 5;
 const DELIVERY_BUDGET: Duration = Duration::from_secs(120);
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 
-/// A validated webhook destination whose credentials are always redacted.
+/// A parsed HTTP or HTTPS webhook URL that never prints its credentials.
 #[derive(Clone)]
 pub struct WebhookUrl(Url);
 
@@ -90,7 +90,7 @@ impl Enqueue {
     }
 }
 
-/// An unstarted webhook delivery worker.
+/// Owns a webhook queue until the caller starts it.
 pub struct Delivery {
     webhook_url: WebhookUrl,
     receiver: mpsc::UnboundedReceiver<Command>,
@@ -100,7 +100,7 @@ pub struct Delivery {
 }
 
 impl Delivery {
-    /// Start delivery on the current Tokio runtime.
+    /// Starts the queue worker on the current Tokio runtime.
     pub fn spawn(self) -> Result<DeliveryHandle, Error> {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| Error::RuntimeUnavailable)?;
         let join = runtime.spawn(run_worker(self.webhook_url, self.receiver, self.adapter, self.retry));
@@ -111,14 +111,14 @@ impl Delivery {
     }
 }
 
-/// A running webhook delivery worker.
+/// Controls a running webhook queue.
 pub struct DeliveryHandle {
     enqueue: Enqueue,
     join: JoinHandle<DeliveryReport>,
 }
 
 impl DeliveryHandle {
-    /// Stop accepting messages, drain the accepted FIFO, and return its report.
+    /// Stops new work, drains accepted messages in FIFO order, and returns the result.
     pub async fn shutdown(self) -> Result<DeliveryReport, Error> {
         let stop_result = self.enqueue.stop();
         let report = self.join.await.map_err(|_| Error::WorkerJoin)?;
@@ -126,7 +126,7 @@ impl DeliveryHandle {
     }
 }
 
-/// A redacted summary of a drained delivery queue.
+/// Counts what happened while the queue drained without storing URLs or message bodies.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DeliveryReport {
     accepted: usize,
@@ -153,7 +153,7 @@ impl DeliveryReport {
     }
 }
 
-/// One terminal message-delivery failure.
+/// Records the attempts and terminal reason for one message.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeliveryFailure {
     attempts: usize,
@@ -170,7 +170,7 @@ impl DeliveryFailure {
     }
 }
 
-/// A redacted terminal reason for failed delivery.
+/// Explains why delivery stopped without exposing the destination or message body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum DeliveryFailureReason {

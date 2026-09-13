@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// An error produced while configuring or operating a trace notification layer.
+/// An error returned while building a layer, rendering a message, or running delivery.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Error {

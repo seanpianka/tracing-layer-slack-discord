@@ -4,20 +4,17 @@ pub trait Filter {
     fn process(&self, value: &str) -> Result<(), FilterError>;
 }
 
-/// EventFilters describes two optional lists of regular expressions used to filter events.
-///
-/// If provided, each expression is used in either negatively ("does NOT MATCH") or
-/// positively ("does MATCH") filter against a specified value.
+/// Keeps a value only when every positive pattern matches and no negative pattern matches.
 #[derive(Debug, Clone, Default)]
 pub struct EventFilters {
-    /// An optional list of one-or-more regular expressions to use for determining record inclusion.
+    /// Patterns that must all match.
     positive: Option<Vec<Regex>>,
-    /// An optional list of one-or-more regular expressions to use for determining record exclusion.
+    /// Patterns that must not match.
     negative: Option<Vec<Regex>>,
 }
 
 impl EventFilters {
-    /// Create a new set of matches.
+    /// Creates filters from optional positive and negative pattern lists.
     pub fn new(positive: Option<Vec<Regex>>, negative: Option<Vec<Regex>>) -> Self {
         Self { positive, negative }
     }
@@ -43,28 +40,28 @@ impl Filter for EventFilters {
     }
 }
 
-/// Interpret and convert a single regex as a single positive filter and no negative filter.
+/// Uses one pattern as the required positive match.
 impl From<Regex> for EventFilters {
     fn from(positive: Regex) -> Self {
         Self::new(Some(vec![positive]), None)
     }
 }
 
-/// Interpret and convert a pair of regex as a single positive filter and a single negative filter.
+/// Uses at most one positive pattern and one negative pattern.
 impl From<(Option<Regex>, Option<Regex>)> for EventFilters {
     fn from((single_positive, single_negative): (Option<Regex>, Option<Regex>)) -> Self {
         Self::new(single_positive.map(|sp| vec![sp]), single_negative.map(|sn| vec![sn]))
     }
 }
 
-/// Interpret and convert a pair of regex as a single positive filter and a single negative filter.
+/// Uses the first pattern for inclusion and the second for exclusion.
 impl From<(Regex, Regex)> for EventFilters {
     fn from((single_positive, single_negative): (Regex, Regex)) -> Self {
         Self::from((Some(single_positive), Some(single_negative)))
     }
 }
 
-/// Interpret and convert a pair of lists of regex as positive and negative filters.
+/// Uses the first list for inclusion and the second for exclusion.
 impl From<(Vec<Regex>, Vec<Regex>)> for EventFilters {
     fn from((positives, negatives): (Vec<Regex>, Vec<Regex>)) -> Self {
         Self::new(Some(positives), Some(negatives))

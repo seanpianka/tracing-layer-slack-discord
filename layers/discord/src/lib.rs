@@ -15,7 +15,7 @@ pub use tracing_layer_core::{
     PreparedNotification, WebhookUrl,
 };
 
-/// A layer that turns selected Trace Events into Discord messages.
+/// Filters Trace Events, renders Discord messages, and queues them for delivery.
 pub struct DiscordLayer {
     support: PlatformSupport,
     rendering: DiscordRendering,
@@ -73,7 +73,7 @@ where
     }
 }
 
-/// Builds a Discord layer and its independently started Webhook Delivery.
+/// Configures a Discord layer and the delivery queue it will use.
 pub struct DiscordLayerBuilder {
     app_name: String,
     target_filters: EventFilters,
@@ -157,14 +157,14 @@ impl DiscordLayerBuilder {
     }
 }
 
-/// The built-in Discord presentation selected at runtime.
+/// Chooses Discord's rich or plain-text renderer at runtime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiscordPresentation {
     Rich,
     Text,
 }
 
-/// The Discord audience requested for error notifications.
+/// Names the audience to mention when a Discord notification has ERROR level.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MentionTarget {
     Everyone,
@@ -172,7 +172,7 @@ pub enum MentionTarget {
     Role(DiscordRoleId),
 }
 
-/// A validated Discord role snowflake.
+/// A non-zero numeric Discord role ID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscordRoleId(u64);
 
@@ -200,7 +200,7 @@ impl FromStr for DiscordRoleId {
     }
 }
 
-/// A validated Discord Platform Message without a destination.
+/// A Discord message that passed this crate's structural checks and has no destination.
 #[derive(Clone, Debug)]
 pub struct DiscordMessage(Value);
 
@@ -219,7 +219,7 @@ impl DiscordMessage {
     }
 }
 
-/// Custom Discord message creation from a read-only Prepared Notification.
+/// Turns a read-only Prepared Notification into a Discord message.
 pub trait DiscordRenderer: Send + Sync + 'static {
     fn render(&self, notification: &PreparedNotification) -> Result<DiscordMessage, Error>;
 }

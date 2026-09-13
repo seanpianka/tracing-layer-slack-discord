@@ -14,7 +14,7 @@ pub use tracing_layer_core::{
     PreparedNotification, WebhookUrl,
 };
 
-/// A layer that turns selected Trace Events into Slack messages.
+/// Filters Trace Events, renders Slack messages, and queues them for delivery.
 pub struct SlackLayer {
     support: PlatformSupport,
     rendering: SlackRendering,
@@ -71,7 +71,7 @@ where
     }
 }
 
-/// Builds a Slack layer and its independently started Webhook Delivery.
+/// Configures a Slack layer and the delivery queue it will use.
 pub struct SlackLayerBuilder {
     app_name: String,
     target_filters: EventFilters,
@@ -147,14 +147,14 @@ impl SlackLayerBuilder {
     }
 }
 
-/// The built-in Slack presentation selected at runtime.
+/// Chooses Slack's rich or plain-text renderer at runtime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SlackPresentation {
     Rich,
     Text,
 }
 
-/// A validated Slack Platform Message without a destination.
+/// A Slack message that passed this crate's structural checks and has no destination.
 #[derive(Clone, Debug)]
 pub struct SlackMessage(Value);
 
@@ -173,7 +173,7 @@ impl SlackMessage {
     }
 }
 
-/// Custom Slack message creation from a read-only Prepared Notification.
+/// Turns a read-only Prepared Notification into a Slack message.
 pub trait SlackRenderer: Send + Sync + 'static {
     fn render(&self, notification: &PreparedNotification) -> Result<SlackMessage, Error>;
 }

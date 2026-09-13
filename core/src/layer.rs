@@ -8,7 +8,7 @@ use tracing_subscriber::layer::Context;
 use crate::filters::Filter;
 use crate::EventFilters;
 
-/// A filtered, normalized Trace Event ready for platform rendering.
+/// Trace data that passed the configured filters and is ready to render.
 #[derive(Clone, Debug)]
 pub struct PreparedNotification {
     app_name: String,

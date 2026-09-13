@@ -1,4 +1,4 @@
-//! Shared trace preparation and webhook delivery for the platform crates.
+//! Filters Trace Events into platform-neutral notifications and delivers rendered messages.
 
 mod error;
 pub mod filters;
@@ -21,7 +21,7 @@ pub mod private {
     use crate::worker::{delivery_channel, Enqueue};
     use crate::{Delivery, Error, EventFilters, PreparedNotification, WebhookUrl};
 
-    /// Opaque support used only by the platform crates.
+    /// Keeps event preparation and delivery wiring out of the platform crates.
     pub struct PlatformSupport {
         app_name: String,
         preparation: PreparationConfig,
